@@ -1,0 +1,92 @@
+// ForeignKeys pins the `(gojet.v1.column).foreign_key` surface end-
+// to-end: plain (no tenancy) FK with a non-default action, and a
+// tenant-composite FK that auto-expands to (tenant_id, col) on both
+// sides. Both scenarios run against a live PG via the integration
+// harness so the emitted ALTER TABLE + backing index land as valid
+// SQL and the constraint actually rejects violating inserts.
+syntax = "proto3";
+
+package jet.e2e.v1;
+
+import "google/api/field_behavior.proto";
+import "gojet/v1/options.proto";
+
+// FKHub — plain (non-tenant) FK target. Single-column PK keeps
+// eligibility trivial under the plain-FK rule.
+message FKHub {
+  option (gojet.v1.table) = {
+    name: "fk_hub"
+    primary_key: ["id"]
+  };
+
+  string id = 1 [(google.api.field_behavior) = IDENTIFIER];
+  string label = 2;
+}
+
+// FKSpoke — references FKHub with ON DELETE CASCADE to exercise a
+// non-default action. Spokes disappear when their hub is deleted.
+message FKSpoke {
+  option (gojet.v1.table) = {
+    name: "fk_spoke"
+    primary_key: ["id"]
+  };
+
+  string id = 1 [(google.api.field_behavior) = IDENTIFIER];
+
+  // Single-column FK to FKHub.id. Plain path: no tenancy on either
+  // side. Backing btree index auto-emitted (hub_id is not covered
+  // by another declared index).
+  string hub_id = 2 [(gojet.v1.column) = {
+    foreign_key: {
+      target: "FKHub.id"
+      on_delete: ACTION_CASCADE
+    }
+  }];
+
+  string note = 3;
+}
+
+// FKOrg — tenant-scoped parent. PK (tenant_id, id) directly covers
+// the (tenant_id, id) composite lookup, so FKProject's FK doesn't
+// force a supplemental UNIQUE injection.
+message FKOrg {
+  option (gojet.v1.table) = {
+    name: "fk_org"
+    primary_key: [
+      "tenant_id",
+      "id"
+    ]
+    tenancy: {
+      column: "tenant_id"
+      runtime_role: "e2e-tenant"
+    }
+  };
+
+  string id = 1 [(google.api.field_behavior) = IDENTIFIER];
+  string name = 2;
+}
+
+// FKProject — tenant-scoped child. The FK on `org_id` auto-expands
+// to `(tenant_id, org_id) REFERENCES fk_org (tenant_id, id)` under
+// the plugin's tenant-composite rule, preventing cross-tenant
+// references structurally. Default actions (RESTRICT / NO ACTION)
+// exercise the unspecified-defaults code path.
+message FKProject {
+  option (gojet.v1.table) = {
+    name: "fk_project"
+    primary_key: [
+      "tenant_id",
+      "id"
+    ]
+    tenancy: {
+      column: "tenant_id"
+      runtime_role: "e2e-tenant"
+    }
+  };
+
+  string id = 1 [(google.api.field_behavior) = IDENTIFIER];
+  string org_id = 2 [(gojet.v1.column) = {
+    foreign_key: {target: "FKOrg.id"}
+  }];
+  string title = 3;
+}

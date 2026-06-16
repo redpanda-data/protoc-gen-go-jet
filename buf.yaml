@@ -1,0 +1,15 @@
+version: v2
+modules:
+  - path: proto
+  - path: cmd/protoc-gen-go-jet/e2e/proto
+deps:
+  - buf.build/googleapis/googleapis
+lint:
+  use:
+    - STANDARD
+  except:
+    - PACKAGE_VERSION_SUFFIX
+breaking:
+  use:
+    - WIRE
+    - WIRE_JSON

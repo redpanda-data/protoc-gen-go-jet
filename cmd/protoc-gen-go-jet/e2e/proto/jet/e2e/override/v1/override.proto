@@ -1,0 +1,29 @@
+// Override exercises the `(gojet.v1.table).output` escape hatch —
+// `go_dir`, `go_package_name`, `jet_model_import`, `jet_table_import`.
+// Default layout puts generated code under
+// <proto_pkg>/storage; this message opts into a custom directory.
+syntax = "proto3";
+
+package jet.e2e.override.v1;
+
+import "gojet/v1/options.proto";
+
+// CustomLayout lives at a hand-picked Go directory rather than the
+// auto-derived one. Everything else in the plugin still works through
+// its regular code paths.
+message CustomLayout {
+  option (gojet.v1.table) = {
+    name: "custom_layout"
+    primary_key: ["id"]
+    output: {
+      go_dir: "cmd/protoc-gen-go-jet/e2e/gen/override_layout"
+      go_package_name: "customstorage"
+      jet_model_import: "github.com/redpanda-data/protoc-gen-go-jet/cmd/protoc-gen-go-jet/e2e/gen/override_layout/jet/public/model"
+      jet_table_import: "github.com/redpanda-data/protoc-gen-go-jet/cmd/protoc-gen-go-jet/e2e/gen/override_layout/jet/public/table"
+    }
+  };
+
+  string id = 1 [(gojet.v1.column) = {immutable: true}];
+
+  string label = 2 [(gojet.v1.column) = {}];
+}

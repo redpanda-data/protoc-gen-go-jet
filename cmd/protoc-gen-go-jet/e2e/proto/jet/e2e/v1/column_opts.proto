@@ -1,0 +1,60 @@
+// ColumnOpts pins every knob on the `(gojet.v1.column)` option in one
+// message — name override, default_expr, check, orderable, immutable,
+// allow_zero_enum. Nullable is exercised in times.proto.
+syntax = "proto3";
+
+package jet.e2e.v1;
+
+import "gojet/v1/options.proto";
+
+enum OptStatus {
+  OPT_STATUS_UNSPECIFIED = 0;
+  OPT_STATUS_OPEN = 1;
+  OPT_STATUS_CLOSED = 2;
+}
+
+// ColumnOpts carries one column per knob so the integration test can
+// verify each option's effect in isolation.
+message ColumnOpts {
+  option (gojet.v1.table) = {
+    name: "column_opts"
+    primary_key: ["id"]
+    tie_breaker: "id asc"
+  };
+
+  string id = 1 [(gojet.v1.column) = {
+    immutable: true
+    orderable: true
+  }];
+
+  // `name:` override — proto field `original_field`, SQL column `renamed_field`.
+  string original_field = 2 [(gojet.v1.column) = {name: "renamed_field"}];
+
+  // `default_expr` — the column has a custom default at the SQL level.
+  // When the caller doesn't set the field the INSERT picks up the
+  // default. `MODEL(row)` always writes the Go zero value though, so
+  // the integration test exercises the default via a direct SQL INSERT
+  // that omits the column.
+  string default_value = 3 [(gojet.v1.column) = {default_expr: "'default-text'"}];
+
+  // `check` — SQL CHECK that rejects bad values at the DB level.
+  int32 bounded_value = 4 [(gojet.v1.column) = {check: "bounded_value >= 0 AND bounded_value <= 100"}];
+
+  // `immutable` — excluded from the generated `<Prefix>UpdateAll()`.
+  // The integration test asserts the alias file's UPDATE list omits it.
+  string creator = 5 [(gojet.v1.column) = {immutable: true}];
+
+  // `orderable: true` + `allow_zero_enum: true` — the enum's zero value
+  // is persistable AND the column participates in pagination.
+  OptStatus status = 6 [(gojet.v1.column) = {
+    orderable: true
+    allow_zero_enum: true
+  }];
+
+  // `rename_from` — declares this column was renamed from a prior
+  // proto name. The plugin emits a PLUGIN-RENAME directive in the
+  // DDL so a migration author uses ALTER TABLE RENAME COLUMN instead
+  // of DROP+ADD. The runtime behaviour is identical to a plain
+  // column — the annotation only affects DDL.
+  string new_label = 7 [(gojet.v1.column) = {rename_from: "old_label"}];
+}

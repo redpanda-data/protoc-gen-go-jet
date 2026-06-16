@@ -1,0 +1,63 @@
+// MultiResource exercises the flat-layout contract: two annotated
+// messages in one .proto file land in the same Go package under
+// <proto_pkg>/storage, each prefixed by its message name. Also covers
+// list-pagination — both tables declare orderable columns so List
+// goes through `aipjet.Execute`.
+syntax = "proto3";
+
+package jet.e2e.v1;
+
+import "google/api/field_behavior.proto";
+import "google/protobuf/timestamp.proto";
+import "gojet/v1/options.proto";
+
+// Alpha + Beta share one proto file and one Go storage package.
+message Alpha {
+  option (gojet.v1.table) = {
+    name: "alphas"
+    primary_key: ["id"]
+    default_order_by: "created_at desc"
+    tie_breaker: "id asc"
+  };
+
+  // IDENTIFIER here is the e2e proof point for the field_behavior
+  // auto-mirror: no explicit `immutable: true` on the column
+  // option; the plugin must infer it from IDENTIFIER (AIP-203
+  // says the resource identifier is immutable through Update).
+  // If the auto-mirror regresses, `AlphaUpdateAll()` would start
+  // listing `id` in its column set and the test below would fire.
+  string id = 1 [
+    (google.api.field_behavior) = IDENTIFIER,
+    (gojet.v1.column) = {orderable: true}
+  ];
+
+  string label = 2 [(gojet.v1.column) = {orderable: true}];
+
+  google.protobuf.Timestamp created_at = 3 [(gojet.v1.column) = {
+    immutable: true
+    orderable: true
+    default_expr: "now()"
+  }];
+}
+
+message Beta {
+  option (gojet.v1.table) = {
+    name: "betas"
+    primary_key: ["id"]
+    default_order_by: "created_at desc"
+    tie_breaker: "id asc"
+  };
+
+  string id = 1 [(gojet.v1.column) = {
+    immutable: true
+    orderable: true
+  }];
+
+  int64 weight = 2 [(gojet.v1.column) = {orderable: true}];
+
+  google.protobuf.Timestamp created_at = 3 [(gojet.v1.column) = {
+    immutable: true
+    orderable: true
+    default_expr: "now()"
+  }];
+}

@@ -1,0 +1,93 @@
+// Oneofs covers both required and optional oneof persistence — the
+// plugin synthesises a `<name>_kind TEXT` + `<name> JSONB` pair and
+// emits a CHECK constraint for valid kinds.
+syntax = "proto3";
+
+package jet.e2e.v1;
+
+import "gojet/v1/options.proto";
+
+message VariantA {
+  string message = 1;
+  int32 score = 2;
+}
+
+message VariantB {
+  repeated string items = 1;
+  bool active = 2;
+}
+
+message VariantC {
+  bytes payload = 1;
+}
+
+// RequiredOneof — a write must pick a variant; the plugin's mapper
+// returns an error when the oneof is unset.
+message RequiredOneof {
+  option (gojet.v1.table) = {
+    name: "required_oneofs"
+    primary_key: ["id"]
+  };
+
+  string id = 1 [(gojet.v1.column) = {immutable: true}];
+
+  oneof choice {
+    option (gojet.v1.oneof_column) = {};
+    VariantA a = 2;
+    VariantB b = 3;
+    VariantC c = 4;
+  }
+}
+
+// OptionalOneof — absence maps to `_kind = ''` + JSONB `'{}'`.
+message OptionalOneof {
+  option (gojet.v1.table) = {
+    name: "optional_oneofs"
+    primary_key: ["id"]
+  };
+
+  string id = 1 [(gojet.v1.column) = {immutable: true}];
+
+  oneof choice {
+    option (gojet.v1.oneof_column) = {optional: true};
+    VariantA a = 2;
+    VariantB b = 3;
+  }
+}
+
+enum ScalarFlavour {
+  SCALAR_FLAVOUR_UNSPECIFIED = 0;
+  SCALAR_FLAVOUR_SWEET = 1;
+  SCALAR_FLAVOUR_SOUR = 2;
+  SCALAR_FLAVOUR_SALTY = 3;
+}
+
+// ScalarOneof exercises scalar + enum variants inside a persisted
+// oneof. Storage shape is unchanged — a `_kind TEXT` discriminator +
+// JSONB value; the JSONB holds the scalar's native JSON encoding
+// (string / number / bool / base64-bytes / enum name) rather than a
+// wrapped message.
+message ScalarOneof {
+  option (gojet.v1.table) = {
+    name: "scalar_oneofs"
+    primary_key: ["id"]
+  };
+
+  string id = 1 [(gojet.v1.column) = {immutable: true}];
+
+  oneof payload {
+    option (gojet.v1.oneof_column) = {optional: true};
+    bool enabled = 2;
+    string note = 3;
+    int32 score32 = 4;
+    int64 score64 = 5;
+    uint32 tally32 = 6;
+    uint64 tally64 = 7;
+    float ratio = 8;
+    double measure = 9;
+    bytes blob = 10;
+    ScalarFlavour flavour = 11;
+    // Message variant still works alongside scalars.
+    VariantA a = 12;
+  }
+}

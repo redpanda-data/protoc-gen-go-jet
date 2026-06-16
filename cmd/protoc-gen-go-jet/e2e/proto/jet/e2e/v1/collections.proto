@@ -1,0 +1,62 @@
+// Collections covers repeated / map / nested-message persistence. Each
+// field maps to a distinct plugin `ColumnKind` — together they pin every
+// list-valued encoding the plugin emits.
+syntax = "proto3";
+
+package jet.e2e.v1;
+
+import "gojet/v1/options.proto";
+
+enum CollectionTag {
+  COLLECTION_TAG_UNSPECIFIED = 0;
+  COLLECTION_TAG_RED = 1;
+  COLLECTION_TAG_GREEN = 2;
+  COLLECTION_TAG_BLUE = 3;
+}
+
+// NestedPayload is a plain message stored as JSONB via protojson.
+message NestedPayload {
+  string name = 1;
+  int64 count = 2;
+  bool flag = 3;
+  repeated string tags = 4;
+}
+
+// Collections exercises repeated string/enum/message, nested message,
+// and map<string,string>.
+message Collections {
+  option (gojet.v1.table) = {
+    name: "collections"
+    primary_key: ["id"]
+  };
+
+  string id = 1 [(gojet.v1.column) = {immutable: true}];
+
+  // repeated string -> TEXT[]. Empty (nil), single, many, with special
+  // chars, unicode.
+  repeated string labels = 2 [(gojet.v1.column) = {}];
+
+  // repeated enum -> TEXT[] of enum names.
+  repeated CollectionTag tags = 3 [(gojet.v1.column) = {}];
+
+  // repeated message -> JSONB array.
+  repeated NestedPayload items = 4 [(gojet.v1.column) = {}];
+
+  // Nested message -> JSONB (protojson).
+  NestedPayload payload = 5 [(gojet.v1.column) = {}];
+
+  // map<string,string> -> JSONB object.
+  map<string, string> attributes = 6 [(gojet.v1.column) = {}];
+
+  // Native-array primitive repeated fields — pq wrappers for BOOLEAN[]
+  // / INTEGER[] / BIGINT[] / REAL[] / DOUBLE PRECISION[]. Unsigned
+  // variants reinterpret element-wise through two's complement at the
+  // mapper, same trick as bare uint32/uint64 scalars.
+  repeated bool flags = 7 [(gojet.v1.column) = {}];
+  repeated int32 ints32 = 8 [(gojet.v1.column) = {}];
+  repeated uint32 uints32 = 9 [(gojet.v1.column) = {}];
+  repeated int64 ints64 = 10 [(gojet.v1.column) = {}];
+  repeated uint64 uints64 = 11 [(gojet.v1.column) = {}];
+  repeated float floats = 12 [(gojet.v1.column) = {}];
+  repeated double doubles = 13 [(gojet.v1.column) = {}];
+}

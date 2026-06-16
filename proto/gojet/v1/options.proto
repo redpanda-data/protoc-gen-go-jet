@@ -1,0 +1,469 @@
+// Options consumed by protoc-gen-go-jet to derive PostgreSQL schema,
+// go-jet-model mappers, and aipjet pagination schemas from proto messages.
+//
+// See the project README for the full design and options reference.
+syntax = "proto3";
+
+package gojet.v1;
+
+import "google/protobuf/descriptor.proto";
+
+option go_package = "github.com/redpanda-data/protoc-gen-go-jet/gen/go/gojet/v1;gojetv1";
+
+// Extension field numbers live in the protobuf private range
+// (50000-99999). 50001 collides with etcd's versionpb.etcd_version_field
+// on FieldOptions, which panics protoregistry at init when both land in
+// one binary. 77231 is out of the hot part of the range (buf.validate,
+// google.api.http, etc.) and out of etcd/k8s-apiserver's usage.
+extend google.protobuf.MessageOptions {
+  // table turns a message into a persisted resource. A message without this
+  // option is not seen by the plugin.
+  optional Table table = 77231;
+}
+
+extend google.protobuf.FieldOptions {
+  // column overrides the defaults the plugin infers for a persisted
+  // field. Fields on a `(storage.v1.table)` message persist by default
+  // with options inferred from the proto field type; annotate only to
+  // override (name, immutable, orderable, filterable, …) or to opt out
+  // via `skip: true` for computed or derived fields.
+  optional Column column = 77231;
+}
+
+extend google.protobuf.OneofOptions {
+  // oneof_column opts a oneof into persistence as a discriminator + JSONB
+  // pair. Without this annotation, the oneof is not persisted.
+  optional OneofColumn oneof_column = 77231;
+}
+
+// Table declares the SQL table for a proto resource.
+message Table {
+  // SQL table name, e.g. "llm_providers". Required.
+  string name = 1;
+
+  // Ordered list of column names that form the primary key.
+  // References synthesized columns (tenant_id) and column names chosen by
+  // each field's Column option (defaults to snake_case of the proto field
+  // name).
+  repeated string primary_key = 2;
+
+  // Secondary indexes to create alongside the table.
+  repeated Index indexes = 3;
+
+  // Tenant/user isolation. When set, the plugin synthesizes a tenant_id
+  // column and emits an RLS policy scoped to runtime_role.
+  Tenancy tenancy = 4;
+
+  // Default ORDER BY used by aipjet when the client does not provide one.
+  // Format: "<field> asc" or "<field> desc". Multiple whitespace-free
+  // tokens separated by commas are accepted, e.g. "create_time desc".
+  // Field names refer to aipjet field paths (from Column), not SQL columns.
+  string default_order_by = 5;
+
+  // Tie-breaker appended to every aipjet ORDER BY to guarantee
+  // deterministic pagination. Usually the primary key, e.g. "name asc".
+  string tie_breaker = 6;
+
+  // Go package and file layout hints for generated files. Optional.
+  Output output = 7;
+
+  // Free-form SQL statements appended to the generated ddl.sql AFTER
+  // the CREATE TABLE, the plugin's indexes, the RLS policies, and
+  // the comments. Each entry is one statement (trailing semicolons
+  // optional; the plugin adds one if missing).
+  //
+  // Escape hatch for shapes the plugin can't express declaratively:
+  //   - ALTER TABLE ... ADD CONSTRAINT with subquery-based CHECK
+  //   - CREATE TRIGGER / FUNCTION for audit or derived columns
+  //   - Custom GIN / GIST / BRIN indexes beyond the built-in kinds
+  //   - GRANT statements for non-tenancy roles
+  //   - Materialised views that read from this table
+  //
+  // The drift check compares the whole table snapshot on both sides,
+  // so the migration chain under --migrations must apply the same
+  // statements for `protoc-gen-go-jet check` to pass. The `diff`
+  // subcommand may bail on shapes it can't reconcile — that's
+  // expected for custom_sql; author the migration by hand and
+  // re-run the check.
+  //
+  // Statements run unconditionally on every DDL application; write
+  // them idempotent (`CREATE INDEX IF NOT EXISTS`, `DROP TRIGGER IF
+  // EXISTS ... then CREATE TRIGGER`, etc.) so a regen doesn't break
+  // already-bootstrapped databases.
+  repeated string custom_sql = 8;
+
+  // When set, emits `PARTITION BY <METHOD> (<cols>)` at the end of
+  // the CREATE TABLE. Postgres requires every partition column to be
+  // a subset of the primary key — the plugin enforces this at resolve
+  // time.
+  //
+  // Child partitions are not emitted by the plugin; attach / detach
+  // them in hand-authored migrations (or via pg_partman). Drift-check
+  // only compares the parent-table declaration.
+  Partition partition_by = 9;
+}
+
+// Tenancy declares how tenant isolation is enforced for this table.
+message Tenancy {
+  // Column name for tenant scoping. Defaults to "tenant_id" when empty.
+  string column = 1;
+
+  // PostgreSQL role the tenant RLS policy attaches to, e.g. "app-tenant".
+  // Required when Tenancy is set.
+  string runtime_role = 2;
+
+  // When true, the policy also requires app.user_id to match a user_column
+  // value, for per-user resources (e.g. oauth tokens).
+  bool user_scoped = 3;
+
+  // Column name for user scoping. Defaults to "user_id" when user_scoped
+  // is true and this is empty.
+  string user_column = 4;
+}
+
+// Index declares a secondary index on the table.
+message Index {
+  // Ordered list of column names that participate in the index.
+  repeated string columns = 1;
+
+  // Optional per-column order modifiers: "ASC" or "DESC". If empty, all
+  // columns default to ASC.
+  repeated string order = 2;
+
+  // UNIQUE index when true.
+  bool unique = 3;
+
+  // Optional partial-index predicate (WHERE clause body, no WHERE keyword).
+  string where = 4;
+
+  // Optional explicit index name. Default: "idx_<table>_<columns>".
+  string name = 5;
+}
+
+// Column carries SQL-level overrides for a persisted field.
+//
+// Absent option or empty option ({}) = persisted with defaults inferred
+// from the proto field type. Set `skip: true` to opt a computed or
+// derived field out of persistence entirely.
+message Column {
+  // Override column name. Default: snake_case of the proto field name.
+  string name = 1;
+
+  reserved 2;
+  reserved "sql_type"; // removed: proto kind is the single source of truth for SQL type.
+
+  // When true, the column allows NULL. Default: false (columns are
+  // NOT NULL by default). Proto scalars have no proto-level nullability,
+  // so nullable columns only make sense for fields whose zero value
+  // must be distinguishable from "unset".
+  bool nullable = 3;
+
+  // Default expression (SQL), without the DEFAULT keyword.
+  // e.g. "now()", "'{}'::jsonb", "0".
+  string default_expr = 4;
+
+  // CHECK constraint body (no CHECK keyword). Multiple checks via separate
+  // fields is not supported; combine with AND.
+  string check = 5;
+
+  // Explicit storage mode. Required for nested messages and proto enums
+  // unless the default is acceptable.
+  Storage storage = 6;
+
+  // When true, field value participates in aipjet's Schema (orderable,
+  // cursor-eligible).
+  bool orderable = 7;
+
+  // Marks the field as immutable after creation. The plugin does not
+  // enforce this at the SQL level; downstream linters and the repository
+  // Update path read this flag to decide what may be written.
+  bool immutable = 8;
+
+  // When true, the auto-generated CHECK constraint for an enum column
+  // includes the zero value (typically <NAME>_UNSPECIFIED). Default:
+  // false — the zero value is rejected, since in proto3 the zero value
+  // is indistinguishable from "field not set" and persisting an unset
+  // enum is almost always a bug.
+  //
+  // Set to true when the zero value has defined semantics (e.g. "use
+  // the default behavior") and callers are expected to leave it unset.
+  bool allow_zero_enum = 9;
+
+  // Paths inside a JSONB column to index with per-path expression
+  // indexes. Each entry is a top-level key or dotted path; the plugin
+  // emits a btree index on `(col->>'path')` for a top-level key or
+  // `((col->'a'->'b'->>'c'))` for a dotted path.
+  //
+  // Only valid on JSONB-backed columns — nested-message (JSONB_PROTO),
+  // message-in-oneof (handled via the oneof's JSONB column), or the
+  // string-map / generic-map kinds. Additive — does not change how the
+  // column value is stored.
+  //
+  // Unblocks SQL-level queries on sub-fields of a JSONB column without
+  // forcing a composite-type migration.
+  repeated string jsonb_indexed_paths = 10;
+
+  // Declares that this column was renamed from a previous proto name.
+  // The plugin emits a `-- PLUGIN-RENAME` directive in the DDL so the
+  // migration author knows to use `ALTER TABLE t RENAME COLUMN <old> TO
+  // <new>` instead of letting pg-schema-diff produce a DROP+ADD pair
+  // (which would destroy column data). Set at the same time as the
+  // proto field rename; drop the annotation on the next release once
+  // every environment has applied the rename migration.
+  string rename_from = 11;
+
+  // When true, emit a GIN index on this JSONB column. GIN indexes
+  // make the `@>` (containment), `@?` (path exists), and `@@` (path
+  // predicate) operators index-eligible without enumerating every
+  // sub-field via `jsonb_indexed_paths`. Only valid on JSONB-backed
+  // columns (nested-message, map, oneof JSON values).
+  //
+  // The plugin emits `CREATE INDEX ... USING GIN (col jsonb_path_ops)`
+  // — jsonb_path_ops is ~3x smaller than the default jsonb_ops
+  // operator class and faster for the common containment-query
+  // workload, at the cost of dropping existence (`?`) and key-text
+  // (`?&` / `?|`) operators. Callers needing those can hand-author
+  // a follow-up index in a migration.
+  //
+  // Works alongside `jsonb_indexed_paths` — use path indexes for
+  // single-value equality lookups (fast, tiny), GIN for open-ended
+  // containment queries (bigger, but covers every path).
+  bool jsonb_gin_index = 12;
+
+  // When true, emit a unique index on this column — shorthand for
+  // declaring a one-column unique entry under `Table.indexes`. The
+  // emitted index is named `idx_<table>_<col>_unique`; override via
+  // an explicit `Table.indexes` entry if you need a different name.
+  //
+  // Combine with `Table.tenancy` to get a tenant-scoped uniqueness
+  // predicate — the plugin emits a partial unique index on
+  // `(tenant_id, col)` when a tenancy is declared, so the caller's
+  // handle can collide across tenants without a hard constraint.
+  bool unique = 13;
+
+  // When true, explicitly exclude this field from persistence. By
+  // default the plugin persists every field on a `(storage.v1.table)`-
+  // annotated message; use `skip: true` to opt out for fields that
+  // are computed at runtime (URLs assembled from a base + ID, ETags
+  // derived from row state, etc.). No column emitted, no mapper entry,
+  // no FilterFields binding. Annotated fields with `skip: true` set
+  // alongside other options are still skipped — the flag dominates.
+  //
+  // Rationale: the opt-in model silently drops a forgotten annotation
+  // (the field vanishes from the DDL with no feedback). Opt-out via
+  // `skip: true` keeps the intent visible in the proto.
+  bool skip = 14;
+
+  // Foreign-key reference. Declares that this column references a
+  // field on another `(storage.v1.table)` message.
+  //
+  // Target is resolved as a proto field reference, not a SQL column
+  // name. The plugin validates at generate time that the referenced
+  // message is persisted and that the referenced field is either the
+  // target's single-column primary key or carries `unique: true`.
+  //
+  // When both this message and the target carry `tenancy`, the FK is
+  // auto-expanded to a composite `(tenant_id, <col>) -> (tenant_id,
+  // <ref>)` to make cross-tenant references structurally impossible.
+  // One-sided tenancy is rejected at generate time.
+  //
+  // A btree index on the FK column is emitted by default, suppressed
+  // automatically when another declared index already covers the
+  // column.
+  //
+  // See the "Foreign keys" section of the project README.
+  ForeignKey foreign_key = 15;
+
+  // Postgres generated-column expression body (no `GENERATED ALWAYS
+  // AS` keywords, no surrounding parens). When set, the plugin emits
+  //
+  //     <col> <type> GENERATED ALWAYS AS (<expr>) STORED [NOT NULL]
+  //
+  // inside the CREATE TABLE. Postgres computes the value on every
+  // INSERT / UPDATE; writes from application code are rejected by
+  // PG, so the generated mapper omits the column on the proto→model
+  // path and the emitted `<Prefix>UpdateAll()` helper excludes it.
+  // The model→proto direction reads the column normally — to the
+  // proto it's just another scalar.
+  //
+  // Mutually exclusive with `default_expr` (PG rejects DEFAULT
+  // alongside GENERATED) and with `unique` / `foreign_key` (out of
+  // scope for this option; declare those on a regular column).
+  //
+  // The expression body is emitted verbatim, so it must reference
+  // sibling column names (not proto field names) — the plugin does
+  // not rewrite identifiers. PG enforces immutability of referenced
+  // expressions at apply time.
+  //
+  // Like `default_expr` and `check`, the value must be an expression
+  // body, not a statement: a `;` is rejected to prevent accidental
+  // statement injection.
+  //
+  // Example — a stored sum of per-bucket cost columns:
+  //
+  //     int64 total_cost_microcents = 8 [(gojet.v1.column) = {
+  //       generated_expr:
+  //         "cost_input_microcents + cost_output_microcents + "
+  //         "cost_cached_input_microcents + cost_cache_creation_5m_microcents + "
+  //         "cost_cache_creation_1h_microcents + cost_cache_creation_unknown_ttl_microcents + "
+  //         "cost_reasoning_microcents + cost_tool_use_input_microcents"
+  //     }];
+  string generated_expr = 16;
+}
+
+// ForeignKey declares a single-column reference to a field on
+// another persisted message.
+//
+// Composite FKs, deferrable constraints, and references to non-unique
+// targets remain the province of `Table.custom_sql`.
+message ForeignKey {
+  // Proto field reference of the form `<Message>.<field>` (same proto
+  // package) or `.fq.pkg.Message.field` (cross-package, with leading
+  // dot). The referenced message must carry `(storage.v1.table)` and
+  // the referenced field must be either the table's single-column
+  // primary key or annotated with `unique: true`. Required.
+  string target = 1;
+
+  // ON DELETE action. Default: ACTION_RESTRICT.
+  Action on_delete = 2;
+
+  // ON UPDATE action. Default: ACTION_NO_ACTION. We use stable IDs;
+  // this should never fire.
+  Action on_update = 3;
+
+  // Override backing-index emission. Plugin default: emit a btree
+  // index on the FK column unless it is the leading column of an
+  // existing primary key, secondary index, or unique constraint.
+  // Set false to suppress when another index covers the column via
+  // an expression or predicate the plugin cannot statically detect.
+  optional bool index = 4;
+}
+
+// Action is the ON DELETE / ON UPDATE referential action.
+enum Action {
+  // Unspecified maps to RESTRICT for on_delete and NO ACTION for
+  // on_update.
+  ACTION_UNSPECIFIED = 0;
+
+  // Reject the delete/update if any referring row exists. Fires
+  // immediately (unlike NO ACTION, which defers to end of statement).
+  ACTION_RESTRICT = 1;
+
+  // Delete/update the referring rows along with the parent. Use only
+  // when the child rows have no meaning without the parent.
+  ACTION_CASCADE = 2;
+
+  // Set the FK column(s) to NULL on parent delete/update. Requires
+  // the FK column to be nullable.
+  ACTION_SET_NULL = 3;
+
+  // Set the FK column(s) to their DEFAULT on parent delete/update.
+  // Requires `default_expr` on the column.
+  ACTION_SET_DEFAULT = 4;
+
+  // Postgres's default: reject the delete/update at end of statement.
+  // Equivalent to RESTRICT in most practical cases.
+  ACTION_NO_ACTION = 5;
+}
+
+// OneofColumn opts a oneof into persistence.
+//
+// Maps to a pair of columns:
+//   <name>_kind  TEXT NOT NULL  — discriminator, CHECK IN (variant names)
+//   <name>       JSONB NOT NULL — protojson of the active variant message
+message OneofColumn {
+  // Base column name. Defaults to the oneof's proto name (snake_case).
+  string name = 1;
+
+  // When true, the oneof is allowed to be unset. The discriminator
+  // becomes '' and the JSONB becomes '{}'. Default: false (at least one
+  // variant must be selected on write).
+  bool optional = 2;
+
+  // Paths inside the oneof's JSONB value column to index with per-path
+  // expression indexes. Same semantics as `Column.jsonb_indexed_paths`
+  // but applied to the `<name>` JSONB column that holds the active
+  // variant's protojson.
+  //
+  // Paths are absolute inside the JSON value — no variant prefix. The
+  // persisted JSON carries whatever protojson emits for the ACTIVE
+  // variant. For a `cloud_provider` oneof with AWS / GCP variants,
+  // the persisted JSON is `{"accountId": "..."}` when AWS is active
+  // and `{"projectId": "..."}` when GCP is active. Declaring
+  // `["accountId"]` emits a single btree index on
+  // `(cloud->>'accountId')` covering only rows whose active variant
+  // carries that field. Combine with the `_kind` column for variant-
+  // specific queries: `cloud_kind = "aws" AND cloud.accountId = "..."`.
+  //
+  // Paths also auto-register in the generated FilterFields as
+  // `<base>.<path>` → the JSONB accessor expression, so AIP-160
+  // dotted-path filters work on oneof sub-fields.
+  repeated string jsonb_indexed_paths = 3;
+}
+
+// Output hints where generated code lands.
+message Output {
+  // Go package name used in the generated mapper/schema files.
+  // Default: snake_case of the table name with no suffix.
+  string go_package_name = 1;
+
+  // Directory (relative to the repo root) for generated mapper/schema.
+  // Default: "<proto_pkg_rel>/storage", mirroring protoc-gen-go's
+  // one-Go-package-per-proto-file layout so every annotated message in
+  // the same .proto lands in one shared Go package. Only set to
+  // override for projects that deviate from the default layout.
+  string go_dir = 2;
+
+  reserved 3, 4;
+  reserved "migration_dir", "migration_seq";
+
+  // Optional override for the import path of the generated go-jet
+  // model package. Default: "<proto_pkg>/storage/jet/public/model",
+  // which is where the plugin emits jet output. Set only when a
+  // project deviates from the default layout.
+  string jet_model_import = 5;
+
+  // Optional override for the import path of the generated go-jet
+  // table package. Default: "<proto_pkg>/storage/jet/public/table".
+  string jet_table_import = 6;
+}
+
+// Partition declares a PARTITION BY clause for the parent table.
+// Partition key columns must all appear in the primary key; Postgres
+// rejects the CREATE TABLE otherwise.
+message Partition {
+  // Partitioning strategy. Required.
+  PartitionMethod method = 1;
+
+  // Columns the partition key is built from. Must be a non-empty
+  // subset of `Table.primary_key`.
+  repeated string columns = 2;
+}
+
+// PartitionMethod selects the Postgres partitioning strategy.
+enum PartitionMethod {
+  PARTITION_METHOD_UNSPECIFIED = 0;
+  PARTITION_METHOD_RANGE = 1;
+  PARTITION_METHOD_LIST = 2;
+  PARTITION_METHOD_HASH = 3;
+}
+
+// Storage encodes how a non-scalar field is persisted.
+enum Storage {
+  // Default: infer from proto field type. Nested message -> JSONB_PROTO,
+  // repeated scalar -> ARRAY, enum -> TEXT_ENUM.
+  STORAGE_UNSPECIFIED = 0;
+
+  // Nested message stored as protojson in a JSONB column.
+  STORAGE_JSONB_PROTO = 1;
+
+  // Repeated scalar stored as a PostgreSQL ARRAY column.
+  STORAGE_ARRAY = 2;
+
+  // Proto enum stored as TEXT, with CHECK (col IN (enum value names)).
+  STORAGE_TEXT_ENUM = 3;
+
+  // map<string,string> stored as a flat JSONB object. Supported only for
+  // string-to-string maps.
+  STORAGE_JSONB_STRMAP = 4;
+}

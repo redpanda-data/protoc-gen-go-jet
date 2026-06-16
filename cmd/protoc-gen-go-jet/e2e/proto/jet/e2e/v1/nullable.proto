@@ -1,0 +1,63 @@
+// Nullable exercises `(gojet.v1.column) = {nullable: true}` against
+// every supported kind: proto3-optional scalars (string / bool /
+// int32 / int64 / enum / bytes), proto3-optional duration, and
+// naturally-present Timestamp. The mapper promotes each to a pointer
+// model field (except []byte, which uses nil-slice presence), and the
+// DDL drops NOT NULL + the kind's zero-value default.
+//
+// Kinds excluded from nullable coverage — they'd be rejected by the
+// resolver at generate time:
+//
+//   - JSONB (proto / list / strmap): presence is already encoded as
+//     nil pointer / empty blob / "{}" sentinel; nullable would be
+//     redundant and the mapper can't emit pointer code for a message
+//     that's already pointer-shaped.
+//   - repeated / map: presence is length-zero vs nil — no use for SQL
+//     NULL.
+syntax = "proto3";
+
+package jet.e2e.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "gojet/v1/options.proto";
+
+enum NullableKind {
+  NULLABLE_KIND_UNSPECIFIED = 0;
+  NULLABLE_KIND_A = 1;
+  NULLABLE_KIND_B = 2;
+}
+
+message Nullable {
+  option (gojet.v1.table) = {
+    name: "nullable"
+    primary_key: ["id"]
+  };
+
+  string id = 1 [(gojet.v1.column) = {immutable: true}];
+
+  // Proto3-optional scalars — synthetic-oneof presence via HasX().
+  optional string string_opt = 2 [(gojet.v1.column) = {nullable: true}];
+  optional bool bool_opt = 3 [(gojet.v1.column) = {nullable: true}];
+  optional int32 int32_opt = 4 [(gojet.v1.column) = {nullable: true}];
+  optional int64 int64_opt = 5 [(gojet.v1.column) = {nullable: true}];
+  optional bytes bytes_opt = 6 [(gojet.v1.column) = {nullable: true}];
+
+  // Proto3-optional enum — HasX() + pointer enum type on the proto
+  // side. allow_zero_enum so the UNSPECIFIED variant is storable on
+  // the happy path (otherwise the CHECK would reject the zero value
+  // if a caller set it explicitly).
+  optional NullableKind kind_opt = 7 [(gojet.v1.column) = {
+    nullable: true
+    allow_zero_enum: true
+  }];
+
+  // Timestamp — presence via the message pointer, no `optional`
+  // needed. Mapper reads t := p.GetX(); t == nil is the NULL signal.
+  google.protobuf.Timestamp deleted_at = 8 [(gojet.v1.column) = {nullable: true}];
+
+  // Proto3-optional Duration — the Duration message is already
+  // nilable, but the column is nullable: true so the mapper emits
+  // *int64 instead of defaulting to zero.
+  optional google.protobuf.Duration ttl_opt = 9 [(gojet.v1.column) = {nullable: true}];
+}

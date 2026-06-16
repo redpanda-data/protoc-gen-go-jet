@@ -1,0 +1,165 @@
+// ClusterLike models a realistic large resource with deeply nested
+// messages, optional fields, oneofs, and maps. This
+// fixture is a shape-compatibility pin — when the plugin learns to
+// handle a new combination of nested / optional / oneof / map
+// features, a field here catches the regression.
+//
+// The features exercised:
+//   - Nested messages declared inside the parent message.
+//   - Nested messages declared inside a nested message (two levels
+//     deep), referenced as a sibling field type.
+//   - optional <message> — proto3-optional on a message-typed field.
+//   - oneof with message variants.
+//   - Repeated messages with their own repeated-string sub-fields.
+//   - map<string, string> with unicode + metacharacter values.
+//   - Enum fields with OUTPUT_ONLY-shaped zero-value semantics.
+//   - google.rpc.Status as a nested-message JSONB column.
+//   - google.protobuf.Struct for dynamic JSON.
+//   - google.protobuf.Timestamp + Duration scalars and repeated.
+syntax = "proto3";
+
+package jet.e2e.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/rpc/status.proto";
+import "gojet/v1/options.proto";
+
+message ClusterLike {
+  option (gojet.v1.table) = {
+    name: "cluster_like"
+    primary_key: ["id"]
+    // Custom SQL escape hatch — append a statement the plugin can't
+    // express declaratively. BRIN on created_at is a sensible
+    // production choice (tiny, fast for time-range scans) that the
+    // plugin's index option set doesn't cover.
+    custom_sql: ["CREATE INDEX IF NOT EXISTS idx_cluster_like_created_at_brin ON cluster_like USING BRIN (created_at)"]
+  };
+
+  string id = 1 [(gojet.v1.column) = {immutable: true}];
+  // Unique shorthand — name is unique (no tenant scoping here;
+  // ClusterLike isn't tenant-annotated).
+  string name = 2 [(gojet.v1.column) = {unique: true}];
+
+  // Simple scalar plus timestamps.
+  google.protobuf.Timestamp created_at = 3 [(gojet.v1.column) = {default_expr: "now()"}];
+  google.protobuf.Timestamp updated_at = 4 [(gojet.v1.column) = {default_expr: "now()"}];
+
+  // State enum.
+  enum State {
+    STATE_UNSPECIFIED = 0;
+    STATE_CREATING = 1;
+    STATE_READY = 2;
+    STATE_DELETING = 3;
+    STATE_FAILED = 4;
+  }
+  State state = 5 [(gojet.v1.column) = {allow_zero_enum: true}];
+
+  // google.rpc.Status as a JSONB blob. This is the canonical "error
+  // detail" shape; needs protojson to survive the Any payloads that
+  // Status.details carries.
+  google.rpc.Status state_description = 6 [(gojet.v1.column) = {}];
+
+  // Repeated string column.
+  repeated string zones = 7 [(gojet.v1.column) = {}];
+
+  // map<string, string> — free-form tags.
+  // `env` gets a btree expression index so tag-by-env queries are fast.
+  map<string, string> cloud_provider_tags = 8 [(gojet.v1.column) = {
+    jsonb_indexed_paths: ["env"]
+  }];
+
+  // Nested message declared inside ClusterLike. Spec lives as JSONB.
+  message Spec {
+    string install_pack_version = 1;
+    int32 nodes_count = 2;
+    repeated string zones = 3;
+    // Nested inside a nested message (two levels deep), referenced as
+    // a sibling field type.
+    message Storage {
+      int64 data_disk_gib = 1;
+      google.protobuf.Duration retention = 2;
+    }
+    Storage storage = 4;
+    // google.protobuf.Struct for dynamic JSON config — a common
+    // shape for free-form cluster configuration.
+    google.protobuf.Struct cluster_config = 5;
+  }
+  // Spec carries both per-path btree indexes (fast equality on
+  // declared paths) and a GIN index over the full JSONB (covers
+  // `@>` containment queries on ANY sub-field). A caller running
+  // `spec @> '{"storage":{"tiered":true}}'` hits the GIN index
+  // without declaring `storage.tiered` as an indexed path.
+  Spec spec = 9 [(gojet.v1.column) = {
+    jsonb_indexed_paths: [
+      "installPackVersion",
+      "storage.dataDiskGib"
+    ]
+    jsonb_gin_index: true
+  }];
+
+  // Nested Status with its own nested messages and a repeated list.
+  message Status {
+    message KafkaListener {
+      string url = 1;
+      repeated string advertised_endpoints = 2;
+      int32 port = 3;
+    }
+    repeated KafkaListener kafka_listeners = 1;
+    google.protobuf.Timestamp last_observed_at = 2;
+  }
+  Status status = 10 [(gojet.v1.column) = {}];
+
+  // optional nested message. proto3 messages already have pointer
+  // presence; `optional` here is syntactic salt that must not confuse
+  // the mapper.
+  message PrivateLink {
+    bool enabled = 1;
+    repeated string allowed_principals = 2;
+  }
+  optional PrivateLink private_link = 11 [(gojet.v1.column) = {}];
+
+  // oneof with message variants.
+  message AWSProvider {
+    string account_id = 1;
+    repeated string regions = 2;
+  }
+  message GCPProvider {
+    string project_id = 1;
+    string network = 2;
+  }
+  // Declared indexed paths on the oneof JSONB column. Paths are
+  // absolute inside the JSON value (no variant prefix) — the
+  // persisted JSON is `{"accountId": "..."}` for the AWS variant and
+  // `{"projectId": "..."}` for the GCP variant, so an index on
+  // `accountId` covers only rows whose active variant carries that
+  // field. Clients combine with `cloud_kind` for variant-specific
+  // queries: `cloud_kind = "aws" AND cloud.accountId = "..."`.
+  oneof cloud {
+    option (gojet.v1.oneof_column) = {
+      optional: true
+      jsonb_indexed_paths: [
+        "accountId",
+        "projectId"
+      ]
+    };
+    AWSProvider aws = 12;
+    GCPProvider gcp = 13;
+  }
+
+  // Repeated nested message — a collection of sub-records.
+  message Endpoint {
+    string name = 1;
+    string url = 2;
+    int32 port = 3;
+  }
+  repeated Endpoint endpoints = 14 [(gojet.v1.column) = {}];
+
+  // Durations.
+  google.protobuf.Duration upgrade_window = 15 [(gojet.v1.column) = {}];
+
+  // Proto3-optional scalars.
+  optional bool connect_console = 16 [(gojet.v1.column) = {nullable: true}];
+  optional int64 resource_version = 17 [(gojet.v1.column) = {nullable: true}];
+}

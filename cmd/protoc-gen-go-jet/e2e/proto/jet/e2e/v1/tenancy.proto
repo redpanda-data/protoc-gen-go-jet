@@ -1,0 +1,96 @@
+// Tenancy pins the `(gojet.v1.table).tenancy` surface — tenant-only
+// and user-scoped variants — plus composite PK, indexes (unique,
+// partial, mixed ASC/DESC), and default_order_by/tie_breaker. Each
+// resource synthesises a `tenant_id` + optional `user_id` column and
+// an RLS policy targeting `e2e-tenant`.
+syntax = "proto3";
+
+package jet.e2e.v1;
+
+import "google/protobuf/timestamp.proto";
+import "gojet/v1/options.proto";
+
+// TenantScoped — composite PK (tenant_id, name), indexes with unique +
+// partial + mixed order, RLS on `e2e-tenant`.
+message TenantScoped {
+  option (gojet.v1.table) = {
+    name: "tenant_scoped"
+    primary_key: [
+      "tenant_id",
+      "name"
+    ]
+    tenancy: {
+      column: "tenant_id"
+      runtime_role: "e2e-tenant"
+    }
+    indexes: [
+      {
+        columns: [
+          "tenant_id",
+          "created_at"
+        ]
+        order: [
+          "ASC",
+          "DESC"
+        ]
+      },
+      {
+        columns: [
+          "tenant_id",
+          "name"
+        ]
+        unique: true
+        name: "uniq_tenant_scoped_tenant_name"
+      },
+      {
+        columns: [
+          "tenant_id",
+          "status"
+        ]
+        where: "enabled = true"
+        name: "idx_tenant_scoped_enabled_status"
+      }
+    ]
+    default_order_by: "created_at desc"
+    tie_breaker: "name asc"
+  };
+
+  string name = 1 [(gojet.v1.column) = {
+    immutable: true
+    orderable: true
+  }];
+
+  // Plain orderable text column.
+  string status = 2 [(gojet.v1.column) = {orderable: true}];
+
+  bool enabled = 3 [(gojet.v1.column) = {}];
+
+  google.protobuf.Timestamp created_at = 4 [(gojet.v1.column) = {
+    immutable: true
+    orderable: true
+    default_expr: "now()"
+  }];
+}
+
+// UserScoped — tenant + user RLS. The synthesised `tenant_id` and
+// `user_id` columns both flow through the RLS policy.
+message UserScoped {
+  option (gojet.v1.table) = {
+    name: "user_scoped"
+    primary_key: [
+      "tenant_id",
+      "user_id",
+      "name"
+    ]
+    tenancy: {
+      column: "tenant_id"
+      user_scoped: true
+      user_column: "user_id"
+      runtime_role: "e2e-tenant"
+    }
+  };
+
+  string name = 1 [(gojet.v1.column) = {immutable: true}];
+
+  string payload = 2 [(gojet.v1.column) = {}];
+}

@@ -1,0 +1,126 @@
+// Maps exercises every proto3-legal map shape the plugin now supports:
+// every integer key kind plus string and bool, every scalar value, and
+// message values. One field per interesting combination so a single
+// row pins every mapper branch. The final `nested` field exercises the
+// pathological "map → object → map → object → repeated object" shape
+// callers hit in practice — the top level lives as its own column,
+// everything below is opaque protojson inside it.
+syntax = "proto3";
+
+package jet.e2e.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "gojet/v1/options.proto";
+
+// MapValuePayload is the message type used where a map value is itself
+// a proto message. Kept small so the test assertions can compare whole
+// values without drowning in boilerplate.
+message MapValuePayload {
+  string label = 1;
+  int64 count = 2;
+}
+
+// Level1..4 form the deep-nested fixture exercising alternating map /
+// repeated / message framing. Only Level1 is stored (as a map value on
+// Maps.nested_tree); Level2..Level4 live inside the protojson-serialised
+// value and round-trip opaquely.
+message Level4 {
+  string tag = 1;
+  int32 value = 2;
+}
+
+message Level3 {
+  repeated Level4 leaves = 1;
+}
+
+message Level2 {
+  map<string, Level3> branches = 1;
+}
+
+message Level1 {
+  map<string, Level2> sections = 1;
+}
+
+message Maps {
+  option (gojet.v1.table) = {
+    name: "maps"
+    primary_key: ["id"]
+  };
+
+  string id = 1 [(gojet.v1.column) = {immutable: true}];
+
+  // String-keyed fast path. Pins the byte-identical output of the
+  // stdlib-json map encoder.
+  map<string, string> str_to_str = 2 [(gojet.v1.column) = {}];
+
+  // String key, every scalar value kind. Bytes goes through json's
+  // automatic base64 codec; bool / int* / string round-trip natively.
+  map<string, int32> str_to_int32 = 3 [(gojet.v1.column) = {}];
+  map<string, int64> str_to_int64 = 4 [(gojet.v1.column) = {}];
+  map<string, bool> str_to_bool = 5 [(gojet.v1.column) = {}];
+  map<string, bytes> str_to_bytes = 6 [(gojet.v1.column) = {}];
+
+  // String key, message value — generic object-of-objects shape, the
+  // common case for structured attributes keyed by an identifier.
+  map<string, MapValuePayload> str_to_msg = 7 [(gojet.v1.column) = {}];
+
+  // Integer and bool keys. Key stringification lives in the mapper;
+  // every integer kind uses base-10 ASCII, bool uses "true"/"false".
+  map<int32, string> int32_to_str = 8 [(gojet.v1.column) = {}];
+  map<int64, string> int64_to_str = 9 [(gojet.v1.column) = {}];
+  map<uint32, int32> uint32_to_int32 = 10 [(gojet.v1.column) = {}];
+  map<bool, string> bool_to_str = 11 [(gojet.v1.column) = {}];
+
+  // Integer key, message value — combined coverage: non-string key path
+  // plus message-value protojson path in the same column.
+  map<int32, MapValuePayload> int32_to_msg = 12 [(gojet.v1.column) = {}];
+
+  // Deep nested fixture — the "map → object → map → object → repeated
+  // object" shape. Only the outer map lives in the DB; Level2/3/4 are
+  // opaque protojson inside the stored JSONB.
+  map<string, Level1> nested_tree = 13 [(gojet.v1.column) = {}];
+
+  // Enum-valued maps — each value stores its enum name, matching
+  // KindEnumAsText for bare enum scalars. Covers the string-keyed and
+  // non-string-keyed paths so the enum handling doesn't sneak in a
+  // regression for either.
+  map<string, MapEnum> str_to_enum = 14 [(gojet.v1.column) = {}];
+  map<int32, MapEnum> int32_to_enum = 15 [(gojet.v1.column) = {}];
+
+  // Well-known message values — Timestamp / Duration ride the generic
+  // map<K, message> path through protojson, same as any other nested
+  // message. Cheap coverage that the mapper doesn't mishandle WKTs
+  // inside maps.
+  map<string, google.protobuf.Timestamp> str_to_timestamp = 16 [(gojet.v1.column) = {}];
+  map<string, google.protobuf.Duration> str_to_duration = 17 [(gojet.v1.column) = {}];
+
+  // Remaining proto3-legal integer key kinds. Every width + signedness
+  // combination exercises a distinct branch in the mapper's
+  // emitKeyToString / emitStringToKey codec. If the codec silently
+  // drops a kind, the round-trip fails with a parse error rather than
+  // a silent data-loss.
+  map<sint32, string> sint32_to_str = 18 [(gojet.v1.column) = {}];
+  map<sint64, string> sint64_to_str = 19 [(gojet.v1.column) = {}];
+  map<uint64, string> uint64_to_str = 20 [(gojet.v1.column) = {}];
+  map<fixed32, string> fixed32_to_str = 21 [(gojet.v1.column) = {}];
+  map<fixed64, string> fixed64_to_str = 22 [(gojet.v1.column) = {}];
+  map<sfixed32, string> sfixed32_to_str = 23 [(gojet.v1.column) = {}];
+  map<sfixed64, string> sfixed64_to_str = 24 [(gojet.v1.column) = {}];
+
+  // Remaining scalar value kinds the plugin persists. float/double
+  // are rejected at resolve time (not landed — see resolve.go's
+  // inferMapEncoding) so they're intentionally absent here; tests
+  // instead pin the rejection at the plugin-unit level.
+  map<string, uint32> str_to_uint32 = 25 [(gojet.v1.column) = {}];
+  map<string, uint64> str_to_uint64 = 26 [(gojet.v1.column) = {}];
+  map<string, fixed32> str_to_fixed32 = 27 [(gojet.v1.column) = {}];
+  map<string, sfixed64> str_to_sfixed64 = 28 [(gojet.v1.column) = {}];
+}
+
+enum MapEnum {
+  MAP_ENUM_UNSPECIFIED = 0;
+  MAP_ENUM_ALPHA = 1;
+  MAP_ENUM_BETA = 2;
+  MAP_ENUM_GAMMA = 3;
+}

@@ -1,0 +1,13 @@
+# Example consumer template. Copy into your repo and adjust `out` paths.
+# Runs protoc-gen-go-jet after protoc-gen-go so the emitted mappers can
+# import the generated proto types. Requires Docker.
+version: v2
+plugins:
+  - local: protoc-gen-go
+    out: gen
+    opt: paths=source_relative
+  - local: protoc-gen-go-jet
+    out: .
+    opt:
+      - paths=source_relative
+      - repo_root=.

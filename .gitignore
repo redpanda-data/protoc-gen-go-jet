@@ -1,0 +1,12 @@
+# Build output
+/.build/
+/bin/
+*.out
+
+# Go
+*.test
+/vendor/
+
+# Editor / OS
+.DS_Store
+*.swp

@@ -1,0 +1,99 @@
+// Scalars exercises every proto3 scalar kind the plugin supports.
+// One row stores every kind's zero/non-zero value so the integration
+// test can round-trip each back through the mapper and assert byte
+// equality.
+syntax = "proto3";
+
+package jet.e2e.v1;
+
+import "gojet/v1/options.proto";
+
+// ScalarKind is a dense enum so every declared variant can be persisted
+// once the `allow_zero_enum: true` column exposes the zero value.
+enum ScalarKind {
+  SCALAR_KIND_UNSPECIFIED = 0;
+  SCALAR_KIND_ALPHA = 1;
+  SCALAR_KIND_BETA = 2;
+  SCALAR_KIND_GAMMA = 3;
+}
+
+// Scalars covers every proto3 scalar kind listed in the plugin's
+// field-kind inference table.
+message Scalars {
+  option (gojet.v1.table) = {
+    name: "scalars"
+    primary_key: ["id"]
+  };
+
+  // Row identifier. Stays immutable.
+  string id = 1 [(gojet.v1.column) = {immutable: true}];
+
+  // string -> TEXT.
+  string string_value = 2 [(gojet.v1.column) = {}];
+
+  // bool -> BOOLEAN.
+  bool bool_value = 3 [(gojet.v1.column) = {}];
+
+  // int32 -> INTEGER. Covers Zero, Min, Max, negative.
+  int32 int32_value = 4 [(gojet.v1.column) = {}];
+
+  // sint32 — zigzag-encoded, same SQL type.
+  sint32 sint32_value = 5 [(gojet.v1.column) = {}];
+
+  // sfixed32 — fixed-width 32-bit signed. INTEGER as well.
+  //
+  // This field is deliberately UN-annotated: it's the e2e proof point
+  // for the persist-by-default behaviour. If the round-trip test
+  // stops seeing an sfixed32 value come back, the plugin reverted to
+  // opt-in and we dropped a column silently.
+  sfixed32 sfixed32_value = 6;
+
+  // uint32 -> INTEGER (int32 at the jet model). The mapper inserts
+  // explicit int32(...) / uint32(...) conversions either way.
+  uint32 uint32_value = 7 [(gojet.v1.column) = {}];
+
+  // fixed32 — fixed-width 32-bit unsigned. Same INTEGER / int32 path.
+  fixed32 fixed32_value = 8 [(gojet.v1.column) = {}];
+
+  // int64 -> BIGINT.
+  int64 int64_value = 9 [(gojet.v1.column) = {}];
+
+  // sint64 — zigzag 64-bit signed.
+  sint64 sint64_value = 10 [(gojet.v1.column) = {}];
+
+  // sfixed64 — fixed-width 64-bit signed.
+  sfixed64 sfixed64_value = 11 [(gojet.v1.column) = {}];
+
+  // float / double -> REAL / DOUBLE PRECISION. Round-trip is bit-exact
+  // at native SQL precision. Both are orderable — Float64Codec
+  // handles the page-token serialisation.
+  float float_value = 17 [(gojet.v1.column) = {orderable: true}];
+  double double_value = 18 [(gojet.v1.column) = {orderable: true}];
+
+  // uint64 -> BIGINT (int64 at the jet model). Same uint/int cast
+  // pattern as uint32.
+  uint64 uint64_value = 12 [(gojet.v1.column) = {}];
+
+  // fixed64 — fixed-width 64-bit unsigned.
+  fixed64 fixed64_value = 13 [(gojet.v1.column) = {}];
+
+  // bytes -> BYTEA. Empty, non-empty, arbitrary binary all round-trip.
+  bytes bytes_value = 14 [(gojet.v1.column) = {}];
+
+  // Enum -> TEXT with auto-CHECK. `allow_zero_enum: true` keeps the
+  // UNSPECIFIED variant in the CHECK so the integration test can
+  // round-trip every declared value.
+  ScalarKind kind_value = 15 [(gojet.v1.column) = {allow_zero_enum: true}];
+
+  // Enum without `allow_zero_enum` — the auto-CHECK excludes UNSPECIFIED.
+  // Used to verify the CHECK rejects the zero value end-to-end.
+  ScalarKind kind_value_strict = 16 [(gojet.v1.column) = {}];
+
+  // Deliberately opted out of persistence with skip: true. Pins the
+  // e2e contract that `skip: true` keeps the field out of the DDL +
+  // mapper entirely. If a regression re-persists it, the round-trip
+  // test still succeeds (the new column would round-trip) but the
+  // accompanying DDL-level assertion below (no `computed_hint`
+  // column in `alpha_ddl.sql`) would fire.
+  string computed_hint = 19 [(gojet.v1.column) = {skip: true}];
+}

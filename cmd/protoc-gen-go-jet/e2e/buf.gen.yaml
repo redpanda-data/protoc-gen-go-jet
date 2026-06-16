@@ -1,0 +1,27 @@
+# E2E generation template. Runs protoc-gen-go plus the in-tree
+# protoc-gen-go-jet over the fixture protos. The gojet/v1 options proto
+# is an in-workspace dependency; its Go bindings live under gen/go and
+# must keep their canonical import path, so managed-mode go_package
+# rewriting is disabled for it (and for googleapis, which ships its own).
+version: v2
+managed:
+  enabled: true
+  disable:
+    - file_option: go_package
+      module: buf.build/googleapis/googleapis
+    - file_option: go_package
+      path: gojet/v1/options.proto
+  override:
+    - file_option: go_package_prefix
+      value: github.com/redpanda-data/protoc-gen-go-jet/cmd/protoc-gen-go-jet/e2e/gen
+plugins:
+  - local: protoc-gen-go
+    out: cmd/protoc-gen-go-jet/e2e/gen
+    opt: paths=source_relative
+  - local: protoc-gen-go-jet
+    out: .
+    opt:
+      - paths=source_relative
+      - repo_root=.
+inputs:
+  - directory: cmd/protoc-gen-go-jet/e2e/proto

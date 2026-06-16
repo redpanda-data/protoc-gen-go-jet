@@ -1,0 +1,66 @@
+// WKT exercises every well-known type through the plugin's generic
+// JSONB-via-protojson pipeline. Timestamp and Duration have dedicated
+// column kinds and are covered in times.proto — this fixture is for
+// everything else protoc-gen-go ships in google/protobuf/*.
+//
+// Each WKT round-trips as JSONB text using protojson's per-type shape
+// (bare literals for wrappers, objects for Struct/Any, arrays for
+// ListValue, comma-separated strings for FieldMask). Unset message
+// fields land as the mapper's sentinel `{}` and read back as nil,
+// matching proto3 "unset message = absent" semantics.
+syntax = "proto3";
+
+package jet.e2e.v1;
+
+import "google/protobuf/any.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/wrappers.proto";
+import "gojet/v1/options.proto";
+
+// Wkt has one column per supported well-known type. The resource
+// doesn't model a real thing — it's a shape test for the mapper.
+message Wkt {
+  option (gojet.v1.table) = {
+    name: "wkt"
+    primary_key: ["id"]
+  };
+
+  string id = 1 [(gojet.v1.column) = {immutable: true}];
+
+  // Wrappers — each serialises to its underlying JSON literal, not to
+  // the {"value": ...} shape. protojson handles the asymmetry.
+  google.protobuf.StringValue string_wrap = 2 [(gojet.v1.column) = {}];
+  google.protobuf.Int32Value int32_wrap = 3 [(gojet.v1.column) = {}];
+  google.protobuf.Int64Value int64_wrap = 4 [(gojet.v1.column) = {}];
+  google.protobuf.UInt32Value uint32_wrap = 5 [(gojet.v1.column) = {}];
+  google.protobuf.UInt64Value uint64_wrap = 6 [(gojet.v1.column) = {}];
+  google.protobuf.BoolValue bool_wrap = 7 [(gojet.v1.column) = {}];
+  google.protobuf.BytesValue bytes_wrap = 8 [(gojet.v1.column) = {}];
+
+  // Float / Double wrappers now route to nullable native REAL /
+  // DOUBLE PRECISION columns, same as the other primitive wrappers.
+  google.protobuf.FloatValue float_wrap = 9 [(gojet.v1.column) = {}];
+  google.protobuf.DoubleValue double_wrap = 10 [(gojet.v1.column) = {}];
+
+  // Dynamic-JSON types. Struct is an object, Value is any JSON scalar
+  // or composite, ListValue is an array. All three round-trip via
+  // protojson's native-JSON form.
+  google.protobuf.Struct struct_value = 11 [(gojet.v1.column) = {}];
+  google.protobuf.Value value_any = 12 [(gojet.v1.column) = {}];
+  google.protobuf.ListValue list_value = 13 [(gojet.v1.column) = {}];
+
+  // Any — carries a type_url discriminator + bytes payload. protojson
+  // serialises as {"@type": "...", "<field>": ...} for well-known
+  // payloads and {"@type": "...", "value": "<base64>"} otherwise.
+  google.protobuf.Any any_value = 14 [(gojet.v1.column) = {}];
+
+  // FieldMask — serialises as a string of comma-separated paths
+  // (canonical AIP-161 form). Stored as a JSONB string literal.
+  google.protobuf.FieldMask field_mask = 15 [(gojet.v1.column) = {}];
+
+  // Empty — has no fields; protojson serialises as {}. Round-trip is
+  // a presence-only check.
+  google.protobuf.Empty empty_value = 16 [(gojet.v1.column) = {}];
+}
