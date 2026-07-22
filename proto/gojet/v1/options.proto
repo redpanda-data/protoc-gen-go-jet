@@ -19,6 +19,14 @@ extend google.protobuf.MessageOptions {
   // table turns a message into a persisted resource. A message without this
   // option is not seen by the plugin.
   optional Table table = 77231;
+
+  // rpsql_read turns a message into a read-only Redpanda SQL (rpsql) model:
+  // the plugin emits a go-jet read binding for the external catalog table the
+  // message's event stream lands in. Independent of `table` (write side); a
+  // message may carry either or both. 77232 stays in the same private range
+  // (see the note above); it is a distinct field number because `table`
+  // already owns 77231 on MessageOptions.
+  optional RpsqlRead rpsql_read = 77232;
 }
 
 extend google.protobuf.FieldOptions {
@@ -34,6 +42,27 @@ extend google.protobuf.OneofOptions {
   // oneof_column opts a oneof into persistence as a discriminator + JSONB
   // pair. Without this annotation, the oneof is not persisted.
   optional OneofColumn oneof_column = 77231;
+}
+
+// RpsqlRead declares that a message is the schema of a Redpanda SQL (rpsql)
+// external catalog table, so the plugin emits a type-safe go-jet read model
+// bound to `catalog => table` (via pkg/rpsql.CatalogTable).
+//
+// Read-only: no DDL, migrations, or drift checks are generated. Scalar, enum,
+// timestamp/duration and single (non-repeated) nested-message fields become
+// typed accessors; repeated fields are currently skipped because rpsql cannot
+// yet read array / composite-array columns.
+message RpsqlRead {
+  // catalog is the rpsql catalog the table lives in
+  // (e.g. "default_redpanda_catalog").
+  string catalog = 1;
+
+  // table is the catalog table name (e.g. "llm_events").
+  string table = 2;
+
+  // cte_name is the CTE alias used to wrap the `catalog => table` read.
+  // Defaults to `table` when empty.
+  string cte_name = 3;
 }
 
 // Table declares the SQL table for a proto resource.

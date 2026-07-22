@@ -123,6 +123,7 @@ merges.
 | `pkg/aip/jet` | `aipjet` — AIP-160 filter → go-jet `BoolExpression` translator and paginated execution. |
 | `pkg/pgstore/jettypes` | Column types with custom `Scan`/`Value` (e.g. `TIMESTAMPTZ[]`). |
 | `pkg/pgstore/jetgen` | Shared go-jet generator configuration. |
+| `pkg/rpsql` | Query Redpanda SQL (rpsql) with go-jet: `CatalogTable` for external `catalog => table` reads via a CTE, composite `(col).field` access, `QueryExecModeExec` execution, and an `information_schema` table-type generator (`rpsql-jet-gen`). |
 
 ## Related
 
