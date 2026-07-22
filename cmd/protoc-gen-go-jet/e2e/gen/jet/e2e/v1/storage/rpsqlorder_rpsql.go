@@ -4,17 +4,22 @@
 package storage
 
 import (
-	"github.com/go-jet/jet/v2/postgres"
+	"context"
+	"time"
 
+	"github.com/go-jet/jet/v2/postgres"
+	"github.com/go-jet/jet/v2/qrm"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
+	pb "github.com/redpanda-data/protoc-gen-go-jet/cmd/protoc-gen-go-jet/e2e/gen/jet/e2e/v1"
 	"github.com/redpanda-data/protoc-gen-go-jet/pkg/rpsql"
 )
 
 // RpsqlOrderRead is a type-safe Redpanda SQL read model for jet.e2e.v1.RpsqlOrder,
 // read from the external catalog table default_redpanda_catalog => orders_seed_test.
 //
-// The catalog read is wrapped in a CTE (only the seed is raw); build the
-// outer query type-safely with the accessors below. Compose with
-// postgres.WITH(RpsqlOrderRead{}.CTE())(postgres.SELECT(...).FROM(...)).
+// Select returns fully-formed *pb.RpsqlOrder values. For custom analytics use the
+// column accessors directly with postgres.WITH(...).
 type RpsqlOrderRead struct {
 	ct rpsql.CatalogTable
 }
@@ -98,8 +103,130 @@ func (t RpsqlOrderRead) PaymentCurrency() postgres.StringExpression {
 	return rpsql.FieldString(t.ct.String("payment"), "currency")
 }
 
+type rpsqlOrderScanRow struct {
+	OrderId                           *string    `alias:"row.OrderId"`
+	CreatedAt                         *time.Time `alias:"row.CreatedAt"`
+	Region                            *string    `alias:"row.Region"`
+	Status                            *string    `alias:"row.Status"`
+	Total                             *float64   `alias:"row.Total"`
+	CustomerId                        *string    `alias:"row.CustomerId"`
+	CustomerName                      *string    `alias:"row.CustomerName"`
+	CustomerEmail                     *string    `alias:"row.CustomerEmail"`
+	CustomerShippingAddressStreet     *string    `alias:"row.CustomerShippingAddressStreet"`
+	CustomerShippingAddressCity       *string    `alias:"row.CustomerShippingAddressCity"`
+	CustomerShippingAddressCountry    *string    `alias:"row.CustomerShippingAddressCountry"`
+	CustomerShippingAddressPostalCode *string    `alias:"row.CustomerShippingAddressPostalCode"`
+	PaymentMethod                     *string    `alias:"row.PaymentMethod"`
+	PaymentTransactionId              *string    `alias:"row.PaymentTransactionId"`
+	PaymentAmount                     *float64   `alias:"row.PaymentAmount"`
+	PaymentCurrency                   *string    `alias:"row.PaymentCurrency"`
+}
+
+// Select reads default_redpanda_catalog => orders_seed_test and returns the rows as *pb.RpsqlOrder.
+// Optional predicates are ANDed into the WHERE clause. Repeated / array
+// fields are left zero-valued (rpsql cannot read them yet).
+func (t RpsqlOrderRead) Select(ctx context.Context, db qrm.Queryable, where ...postgres.BoolExpression) ([]*pb.RpsqlOrder, error) {
+	q := postgres.SELECT(
+		t.ct.String("order_id").AS("row.OrderId"),
+		t.ct.Timestampz("created_at").AS("row.CreatedAt"),
+		t.ct.String("region").AS("row.Region"),
+		t.ct.String("status").AS("row.Status"),
+		t.ct.Float("total").AS("row.Total"),
+		rpsql.FieldString(t.ct.String("customer"), "id").AS("row.CustomerId"),
+		rpsql.FieldString(t.ct.String("customer"), "name").AS("row.CustomerName"),
+		rpsql.FieldString(t.ct.String("customer"), "email").AS("row.CustomerEmail"),
+		rpsql.FieldString(rpsql.Field(t.ct.String("customer"), "shipping_address"), "street").AS("row.CustomerShippingAddressStreet"),
+		rpsql.FieldString(rpsql.Field(t.ct.String("customer"), "shipping_address"), "city").AS("row.CustomerShippingAddressCity"),
+		rpsql.FieldString(rpsql.Field(t.ct.String("customer"), "shipping_address"), "country").AS("row.CustomerShippingAddressCountry"),
+		rpsql.FieldString(rpsql.Field(t.ct.String("customer"), "shipping_address"), "postal_code").AS("row.CustomerShippingAddressPostalCode"),
+		rpsql.FieldString(t.ct.String("payment"), "method").AS("row.PaymentMethod"),
+		rpsql.FieldString(t.ct.String("payment"), "transaction_id").AS("row.PaymentTransactionId"),
+		rpsql.FieldFloat(t.ct.String("payment"), "amount").AS("row.PaymentAmount"),
+		rpsql.FieldString(t.ct.String("payment"), "currency").AS("row.PaymentCurrency"),
+	).FROM(t.CTE())
+	if len(where) > 0 {
+		cond := where[0]
+		for _, w := range where[1:] {
+			cond = cond.AND(w)
+		}
+		q = q.WHERE(cond)
+	}
+	var rows []rpsqlOrderScanRow
+	if err := postgres.WITH(t.CTE())(q).QueryContext(ctx, db, &rows); err != nil {
+		return nil, err
+	}
+	out := make([]*pb.RpsqlOrder, 0, len(rows))
+	for i := range rows {
+		r := &rows[i]
+		m := &pb.RpsqlOrder{}
+		if r.OrderId != nil {
+			m.OrderId = *r.OrderId
+		}
+		if r.CreatedAt != nil {
+			m.CreatedAt = timestamppb.New(*r.CreatedAt)
+		}
+		if r.Region != nil {
+			m.Region = *r.Region
+		}
+		if r.Status != nil {
+			m.Status = pb.OrderStatus(pb.OrderStatus_value[*r.Status])
+		}
+		if r.Total != nil {
+			m.Total = *r.Total
+		}
+		if r.CustomerId != nil || r.CustomerName != nil || r.CustomerEmail != nil || r.CustomerShippingAddressStreet != nil || r.CustomerShippingAddressCity != nil || r.CustomerShippingAddressCountry != nil || r.CustomerShippingAddressPostalCode != nil {
+			sub1 := &pb.RpsqlOrder_Customer{}
+			if r.CustomerId != nil {
+				sub1.Id = *r.CustomerId
+			}
+			if r.CustomerName != nil {
+				sub1.Name = *r.CustomerName
+			}
+			if r.CustomerEmail != nil {
+				sub1.Email = *r.CustomerEmail
+			}
+			if r.CustomerShippingAddressStreet != nil || r.CustomerShippingAddressCity != nil || r.CustomerShippingAddressCountry != nil || r.CustomerShippingAddressPostalCode != nil {
+				sub2 := &pb.RpsqlOrder_Address{}
+				if r.CustomerShippingAddressStreet != nil {
+					sub2.Street = *r.CustomerShippingAddressStreet
+				}
+				if r.CustomerShippingAddressCity != nil {
+					sub2.City = *r.CustomerShippingAddressCity
+				}
+				if r.CustomerShippingAddressCountry != nil {
+					sub2.Country = *r.CustomerShippingAddressCountry
+				}
+				if r.CustomerShippingAddressPostalCode != nil {
+					sub2.PostalCode = *r.CustomerShippingAddressPostalCode
+				}
+				sub1.ShippingAddress = sub2
+			}
+			m.Customer = sub1
+		}
+		if r.PaymentMethod != nil || r.PaymentTransactionId != nil || r.PaymentAmount != nil || r.PaymentCurrency != nil {
+			sub3 := &pb.RpsqlOrder_Payment{}
+			if r.PaymentMethod != nil {
+				sub3.Method = *r.PaymentMethod
+			}
+			if r.PaymentTransactionId != nil {
+				sub3.TransactionId = *r.PaymentTransactionId
+			}
+			if r.PaymentAmount != nil {
+				sub3.Amount = *r.PaymentAmount
+			}
+			if r.PaymentCurrency != nil {
+				sub3.Currency = *r.PaymentCurrency
+			}
+			m.Payment = sub3
+		}
+		out = append(out, m)
+	}
+	return out, nil
+}
+
 // Omitted fields (repeated / map): rpsql cannot yet read array or
-// composite-array columns, so these have no accessor:
+// composite-array columns, so these have no accessor and Select leaves
+// them zero-valued:
 //   - items (repeated)
 //   - tags (repeated)
 //   - attributes (map)

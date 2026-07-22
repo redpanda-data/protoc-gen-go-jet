@@ -31,6 +31,33 @@ type rpsqlReadPlan struct {
 	// SkippedRepeated lists repeated field paths omitted from the read model.
 	// rpsql cannot yet read array / composite-array columns.
 	SkippedRepeated []string
+
+	// Proto assembly: lets Select() return the proto message directly.
+	ProtoGoType     string // root message Go type, e.g. "LlmEvent"
+	ProtoImportPath string // proto Go import path
+	ScanCols        []rpsqlScanCol
+	AsmRoot         []rpsqlAsmNode
+}
+
+// rpsqlScanCol is one leaf column projected + scanned for proto assembly.
+type rpsqlScanCol struct {
+	Field string // unique Go field name in the unexported scan row struct
+	Type  string // scan Go type (always a pointer for NULL safety), e.g. "*string"
+	Alias string // SQL/scan alias
+	Expr  string // SELECT expression (same as the accessor body)
+}
+
+// rpsqlAsmNode is a node in the proto-assembly tree: a leaf that reads a scan
+// column into a proto field, or a nested message whose children populate it.
+type rpsqlAsmNode struct {
+	ProtoField string // Go field name on the parent message
+	Message    bool
+	MsgGoType  string         // for message nodes, e.g. "LlmEvent_Error"
+	Children   []rpsqlAsmNode // for message nodes
+	// leaf:
+	ScanField  string // rpsqlScanCol.Field
+	Conv       string // scalarValue|scalarPtr|enumValue|enumPtr|timestamp|duration
+	EnumGoType string // for enum conv
 }
 
 // rpsqlAccessor is one generated method on the read model.
@@ -101,7 +128,116 @@ func resolveRpsqlRead(f *protogen.File, m *protogen.Message, repoRoot, modulePat
 	if len(plan.Accessors) == 0 {
 		return nil, fmt.Errorf("rpsql_read message %s has no readable fields (only repeated/unsupported kinds found)", m.Desc.Name())
 	}
+
+	// Proto assembly plan: lets Select() return []*<Msg> directly.
+	plan.ProtoGoType = m.GoIdent.GoName
+	plan.ProtoImportPath = string(m.GoIdent.GoImportPath)
+	plan.AsmRoot = buildRpsqlProto(plan, "", "", m.Fields)
+
 	return plan, nil
+}
+
+// buildRpsqlProto walks a message's fields into a proto-assembly tree and
+// registers the leaf scan columns. methodPrefix accumulates unique Go
+// field/alias names; baseExpr is the go-jet expression for the composite this
+// level lives under ("" at the top level).
+func buildRpsqlProto(plan *rpsqlReadPlan, methodPrefix, baseExpr string, fields []*protogen.Field) []rpsqlAsmNode {
+	var nodes []rpsqlAsmNode
+	for _, f := range fields {
+		if f.Desc.IsMap() || f.Desc.IsList() {
+			continue // arrays unsupported; already recorded by the accessor pass
+		}
+		name := string(f.Desc.Name())
+		method := methodPrefix + camel(name)
+
+		if f.Desc.Kind() == protoreflect.MessageKind || f.Desc.Kind() == protoreflect.GroupKind {
+			switch wellKnown(f.Message) {
+			case wktTimestamp:
+				plan.addScan(method, "*time.Time", topOrMember(baseExpr, name, "Timestampz", "FieldTimestampz"))
+				nodes = append(nodes, rpsqlAsmNode{ProtoField: f.GoName, ScanField: method, Conv: "timestamp"})
+			case wktDuration:
+				plan.addScan(method, "*int64", topOrMember(baseExpr, name, "Int", "FieldInt"))
+				nodes = append(nodes, rpsqlAsmNode{ProtoField: f.GoName, ScanField: method, Conv: "duration"})
+			case wktWrapper:
+				addProtoScalar(plan, &nodes, f, method, baseExpr, name, f.Message.Fields[0].Desc.Kind())
+			default:
+				childBase := composeBase(baseExpr, name)
+				children := buildRpsqlProto(plan, method, childBase, f.Message.Fields)
+				if len(children) > 0 {
+					nodes = append(nodes, rpsqlAsmNode{ProtoField: f.GoName, Message: true, MsgGoType: f.Message.GoIdent.GoName, Children: children})
+				}
+			}
+			continue
+		}
+		if f.Desc.Kind() == protoreflect.EnumKind {
+			plan.addScan(method, "*string", topOrMember(baseExpr, name, "String", "FieldString"))
+			conv := "enumValue"
+			if f.Desc.HasPresence() {
+				conv = "enumPtr"
+			}
+			nodes = append(nodes, rpsqlAsmNode{ProtoField: f.GoName, ScanField: method, Conv: conv, EnumGoType: f.Enum.GoIdent.GoName})
+			continue
+		}
+		addProtoScalar(plan, &nodes, f, method, baseExpr, name, f.Desc.Kind())
+	}
+	return nodes
+}
+
+func addProtoScalar(plan *rpsqlReadPlan, nodes *[]rpsqlAsmNode, f *protogen.Field, method, baseExpr, name string, kind protoreflect.Kind) {
+	scanType, ctMethod, fieldFn := "", "", ""
+	switch scalarClass(kind) {
+	case classString:
+		scanType, ctMethod, fieldFn = "*string", "String", "FieldString"
+	case classBool:
+		scanType, ctMethod, fieldFn = "*bool", "Bool", "FieldBool"
+	case classInt:
+		if kind == protoreflect.Int32Kind || kind == protoreflect.Sint32Kind || kind == protoreflect.Sfixed32Kind {
+			scanType = "*int32"
+		} else {
+			scanType = "*int64"
+		}
+		ctMethod, fieldFn = "Int", "FieldInt"
+	case classFloat:
+		if kind == protoreflect.FloatKind {
+			scanType = "*float32"
+		} else {
+			scanType = "*float64"
+		}
+		ctMethod, fieldFn = "Float", "FieldFloat"
+	default:
+		return // bytes / unsupported
+	}
+	plan.addScan(method, scanType, topOrMember(baseExpr, name, ctMethod, fieldFn))
+	conv := "scalarValue"
+	if f.Desc.HasPresence() {
+		conv = "scalarPtr"
+	}
+	*nodes = append(*nodes, rpsqlAsmNode{ProtoField: f.GoName, ScanField: method, Conv: conv})
+}
+
+func (p *rpsqlReadPlan) addScan(field, typ, expr string) {
+	// qrm maps a result column to a struct field by matching the column alias
+	// to the field's `alias` tag; it needs the "table.column" dotted form, so
+	// prefix a synthetic table qualifier.
+	p.ScanCols = append(p.ScanCols, rpsqlScanCol{Field: field, Type: typ, Alias: "row." + field, Expr: expr})
+}
+
+// topOrMember returns the go-jet expression for a leaf: a CatalogTable column
+// at the top level, or a composite member accessor under baseExpr.
+func topOrMember(baseExpr, name, ctMethod, fieldFn string) string {
+	if baseExpr == "" {
+		return fmt.Sprintf("t.ct.%s(%q)", ctMethod, name)
+	}
+	return fmt.Sprintf("rpsql.%s(%s, %q)", fieldFn, baseExpr, name)
+}
+
+// composeBase returns the go-jet expression for a composite column used as the
+// base for its members.
+func composeBase(baseExpr, name string) string {
+	if baseExpr == "" {
+		return fmt.Sprintf("t.ct.String(%q)", name)
+	}
+	return fmt.Sprintf("rpsql.Field(%s, %q)", baseExpr, name)
 }
 
 // resolveRpsqlField adds accessor(s) for one top-level field, or records it as

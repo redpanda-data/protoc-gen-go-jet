@@ -25,8 +25,50 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
 
+	e2ev1 "github.com/redpanda-data/protoc-gen-go-jet/cmd/protoc-gen-go-jet/e2e/gen/jet/e2e/v1"
 	storage "github.com/redpanda-data/protoc-gen-go-jet/cmd/protoc-gen-go-jet/e2e/gen/jet/e2e/v1/storage"
 )
+
+// TestRpsqlOrderRead_SelectProto exercises the generated Select(), which reads
+// the catalog table and returns fully-assembled proto messages (no bespoke
+// struct): scalars, enum (text->enum), timestamp, and nested composite
+// messages. Repeated fields stay zero-valued (rpsql array limitation).
+func TestRpsqlOrderRead_SelectProto(t *testing.T) {
+	db := openRpsql(t)
+	defer db.Close()
+
+	orders, err := storage.NewRpsqlOrderRead().Select(context.Background(), db)
+	if err != nil {
+		t.Fatalf("Select: %v", err)
+	}
+	if len(orders) == 0 {
+		t.Skip("no rows in orders_seed_test")
+	}
+
+	var got *e2ev1.RpsqlOrder
+	for _, o := range orders {
+		if o.GetCustomer().GetShippingAddress() != nil && o.GetPayment() != nil {
+			got = o
+			break
+		}
+	}
+	if got == nil {
+		t.Fatal("expected an order with customer.shipping_address and payment populated")
+	}
+	if got.GetStatus() == e2ev1.OrderStatus_ORDER_STATUS_UNSPECIFIED && got.GetOrderId() == "" {
+		t.Errorf("proto not populated: %+v", got)
+	}
+	if len(got.GetItems()) != 0 {
+		t.Errorf("repeated Items should be empty (rpsql cannot read arrays), got %d", len(got.GetItems()))
+	}
+	t.Logf("*RpsqlOrder: status=%s method=%s country=%s total=%.2f items=%d",
+		got.GetStatus(),
+		got.GetPayment().GetMethod(),
+		got.GetCustomer().GetShippingAddress().GetCountry(),
+		got.GetTotal(),
+		len(got.GetItems()),
+	)
+}
 
 func TestRpsqlOrderRead_Integration(t *testing.T) {
 	db := openRpsql(t)
