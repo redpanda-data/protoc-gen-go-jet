@@ -214,6 +214,79 @@ func (Storage) EnumDescriptor() ([]byte, []int) {
 	return file_gojet_v1_options_proto_rawDescGZIP(), []int{2}
 }
 
+// RpsqlRead declares that a message is the schema of a Redpanda SQL (rpsql)
+// external catalog table, so the plugin emits a type-safe go-jet read model
+// bound to `catalog => table` (via pkg/rpsql.CatalogTable).
+//
+// Read-only: no DDL, migrations, or drift checks are generated. Scalar, enum,
+// timestamp/duration and single (non-repeated) nested-message fields become
+// typed accessors; repeated fields are currently skipped because rpsql cannot
+// yet read array / composite-array columns.
+type RpsqlRead struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// catalog is the rpsql catalog the table lives in
+	// (e.g. "default_redpanda_catalog").
+	Catalog string `protobuf:"bytes,1,opt,name=catalog,proto3" json:"catalog,omitempty"`
+	// table is the catalog table name (e.g. "llm_events").
+	Table string `protobuf:"bytes,2,opt,name=table,proto3" json:"table,omitempty"`
+	// cte_name is the CTE alias used to wrap the `catalog => table` read.
+	// Defaults to `table` when empty.
+	CteName       string `protobuf:"bytes,3,opt,name=cte_name,json=cteName,proto3" json:"cte_name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RpsqlRead) Reset() {
+	*x = RpsqlRead{}
+	mi := &file_gojet_v1_options_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RpsqlRead) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RpsqlRead) ProtoMessage() {}
+
+func (x *RpsqlRead) ProtoReflect() protoreflect.Message {
+	mi := &file_gojet_v1_options_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RpsqlRead.ProtoReflect.Descriptor instead.
+func (*RpsqlRead) Descriptor() ([]byte, []int) {
+	return file_gojet_v1_options_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *RpsqlRead) GetCatalog() string {
+	if x != nil {
+		return x.Catalog
+	}
+	return ""
+}
+
+func (x *RpsqlRead) GetTable() string {
+	if x != nil {
+		return x.Table
+	}
+	return ""
+}
+
+func (x *RpsqlRead) GetCteName() string {
+	if x != nil {
+		return x.CteName
+	}
+	return ""
+}
+
 // Table declares the SQL table for a proto resource.
 type Table struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -278,7 +351,7 @@ type Table struct {
 
 func (x *Table) Reset() {
 	*x = Table{}
-	mi := &file_gojet_v1_options_proto_msgTypes[0]
+	mi := &file_gojet_v1_options_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -290,7 +363,7 @@ func (x *Table) String() string {
 func (*Table) ProtoMessage() {}
 
 func (x *Table) ProtoReflect() protoreflect.Message {
-	mi := &file_gojet_v1_options_proto_msgTypes[0]
+	mi := &file_gojet_v1_options_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -303,7 +376,7 @@ func (x *Table) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Table.ProtoReflect.Descriptor instead.
 func (*Table) Descriptor() ([]byte, []int) {
-	return file_gojet_v1_options_proto_rawDescGZIP(), []int{0}
+	return file_gojet_v1_options_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *Table) GetName() string {
@@ -389,7 +462,7 @@ type Tenancy struct {
 
 func (x *Tenancy) Reset() {
 	*x = Tenancy{}
-	mi := &file_gojet_v1_options_proto_msgTypes[1]
+	mi := &file_gojet_v1_options_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -401,7 +474,7 @@ func (x *Tenancy) String() string {
 func (*Tenancy) ProtoMessage() {}
 
 func (x *Tenancy) ProtoReflect() protoreflect.Message {
-	mi := &file_gojet_v1_options_proto_msgTypes[1]
+	mi := &file_gojet_v1_options_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -414,7 +487,7 @@ func (x *Tenancy) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Tenancy.ProtoReflect.Descriptor instead.
 func (*Tenancy) Descriptor() ([]byte, []int) {
-	return file_gojet_v1_options_proto_rawDescGZIP(), []int{1}
+	return file_gojet_v1_options_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *Tenancy) GetColumn() string {
@@ -465,7 +538,7 @@ type Index struct {
 
 func (x *Index) Reset() {
 	*x = Index{}
-	mi := &file_gojet_v1_options_proto_msgTypes[2]
+	mi := &file_gojet_v1_options_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -477,7 +550,7 @@ func (x *Index) String() string {
 func (*Index) ProtoMessage() {}
 
 func (x *Index) ProtoReflect() protoreflect.Message {
-	mi := &file_gojet_v1_options_proto_msgTypes[2]
+	mi := &file_gojet_v1_options_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -490,7 +563,7 @@ func (x *Index) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Index.ProtoReflect.Descriptor instead.
 func (*Index) Descriptor() ([]byte, []int) {
-	return file_gojet_v1_options_proto_rawDescGZIP(), []int{2}
+	return file_gojet_v1_options_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *Index) GetColumns() []string {
@@ -687,7 +760,7 @@ type Column struct {
 
 func (x *Column) Reset() {
 	*x = Column{}
-	mi := &file_gojet_v1_options_proto_msgTypes[3]
+	mi := &file_gojet_v1_options_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -699,7 +772,7 @@ func (x *Column) String() string {
 func (*Column) ProtoMessage() {}
 
 func (x *Column) ProtoReflect() protoreflect.Message {
-	mi := &file_gojet_v1_options_proto_msgTypes[3]
+	mi := &file_gojet_v1_options_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -712,7 +785,7 @@ func (x *Column) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Column.ProtoReflect.Descriptor instead.
 func (*Column) Descriptor() ([]byte, []int) {
-	return file_gojet_v1_options_proto_rawDescGZIP(), []int{3}
+	return file_gojet_v1_options_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *Column) GetName() string {
@@ -850,7 +923,7 @@ type ForeignKey struct {
 
 func (x *ForeignKey) Reset() {
 	*x = ForeignKey{}
-	mi := &file_gojet_v1_options_proto_msgTypes[4]
+	mi := &file_gojet_v1_options_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -862,7 +935,7 @@ func (x *ForeignKey) String() string {
 func (*ForeignKey) ProtoMessage() {}
 
 func (x *ForeignKey) ProtoReflect() protoreflect.Message {
-	mi := &file_gojet_v1_options_proto_msgTypes[4]
+	mi := &file_gojet_v1_options_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -875,7 +948,7 @@ func (x *ForeignKey) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ForeignKey.ProtoReflect.Descriptor instead.
 func (*ForeignKey) Descriptor() ([]byte, []int) {
-	return file_gojet_v1_options_proto_rawDescGZIP(), []int{4}
+	return file_gojet_v1_options_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ForeignKey) GetTarget() string {
@@ -945,7 +1018,7 @@ type OneofColumn struct {
 
 func (x *OneofColumn) Reset() {
 	*x = OneofColumn{}
-	mi := &file_gojet_v1_options_proto_msgTypes[5]
+	mi := &file_gojet_v1_options_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -957,7 +1030,7 @@ func (x *OneofColumn) String() string {
 func (*OneofColumn) ProtoMessage() {}
 
 func (x *OneofColumn) ProtoReflect() protoreflect.Message {
-	mi := &file_gojet_v1_options_proto_msgTypes[5]
+	mi := &file_gojet_v1_options_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -970,7 +1043,7 @@ func (x *OneofColumn) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OneofColumn.ProtoReflect.Descriptor instead.
 func (*OneofColumn) Descriptor() ([]byte, []int) {
-	return file_gojet_v1_options_proto_rawDescGZIP(), []int{5}
+	return file_gojet_v1_options_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *OneofColumn) GetName() string {
@@ -1020,7 +1093,7 @@ type Output struct {
 
 func (x *Output) Reset() {
 	*x = Output{}
-	mi := &file_gojet_v1_options_proto_msgTypes[6]
+	mi := &file_gojet_v1_options_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1032,7 +1105,7 @@ func (x *Output) String() string {
 func (*Output) ProtoMessage() {}
 
 func (x *Output) ProtoReflect() protoreflect.Message {
-	mi := &file_gojet_v1_options_proto_msgTypes[6]
+	mi := &file_gojet_v1_options_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1045,7 +1118,7 @@ func (x *Output) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Output.ProtoReflect.Descriptor instead.
 func (*Output) Descriptor() ([]byte, []int) {
-	return file_gojet_v1_options_proto_rawDescGZIP(), []int{6}
+	return file_gojet_v1_options_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *Output) GetGoPackageName() string {
@@ -1092,7 +1165,7 @@ type Partition struct {
 
 func (x *Partition) Reset() {
 	*x = Partition{}
-	mi := &file_gojet_v1_options_proto_msgTypes[7]
+	mi := &file_gojet_v1_options_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1104,7 +1177,7 @@ func (x *Partition) String() string {
 func (*Partition) ProtoMessage() {}
 
 func (x *Partition) ProtoReflect() protoreflect.Message {
-	mi := &file_gojet_v1_options_proto_msgTypes[7]
+	mi := &file_gojet_v1_options_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1117,7 +1190,7 @@ func (x *Partition) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Partition.ProtoReflect.Descriptor instead.
 func (*Partition) Descriptor() ([]byte, []int) {
-	return file_gojet_v1_options_proto_rawDescGZIP(), []int{7}
+	return file_gojet_v1_options_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *Partition) GetMethod() PartitionMethod {
@@ -1141,6 +1214,14 @@ var file_gojet_v1_options_proto_extTypes = []protoimpl.ExtensionInfo{
 		Field:         77231,
 		Name:          "gojet.v1.table",
 		Tag:           "bytes,77231,opt,name=table",
+		Filename:      "gojet/v1/options.proto",
+	},
+	{
+		ExtendedType:  (*descriptorpb.MessageOptions)(nil),
+		ExtensionType: (*RpsqlRead)(nil),
+		Field:         77232,
+		Name:          "gojet.v1.rpsql_read",
+		Tag:           "bytes,77232,opt,name=rpsql_read",
 		Filename:      "gojet/v1/options.proto",
 	},
 	{
@@ -1168,6 +1249,15 @@ var (
 	//
 	// optional gojet.v1.Table table = 77231;
 	E_Table = &file_gojet_v1_options_proto_extTypes[0]
+	// rpsql_read turns a message into a read-only Redpanda SQL (rpsql) model:
+	// the plugin emits a go-jet read binding for the external catalog table the
+	// message's event stream lands in. Independent of `table` (write side); a
+	// message may carry either or both. 77232 stays in the same private range
+	// (see the note above); it is a distinct field number because `table`
+	// already owns 77231 on MessageOptions.
+	//
+	// optional gojet.v1.RpsqlRead rpsql_read = 77232;
+	E_RpsqlRead = &file_gojet_v1_options_proto_extTypes[1]
 )
 
 // Extension fields to descriptorpb.FieldOptions.
@@ -1179,7 +1269,7 @@ var (
 	// via `skip: true` for computed or derived fields.
 	//
 	// optional gojet.v1.Column column = 77231;
-	E_Column = &file_gojet_v1_options_proto_extTypes[1]
+	E_Column = &file_gojet_v1_options_proto_extTypes[2]
 )
 
 // Extension fields to descriptorpb.OneofOptions.
@@ -1188,14 +1278,18 @@ var (
 	// pair. Without this annotation, the oneof is not persisted.
 	//
 	// optional gojet.v1.OneofColumn oneof_column = 77231;
-	E_OneofColumn = &file_gojet_v1_options_proto_extTypes[2]
+	E_OneofColumn = &file_gojet_v1_options_proto_extTypes[3]
 )
 
 var File_gojet_v1_options_proto protoreflect.FileDescriptor
 
 const file_gojet_v1_options_proto_rawDesc = "" +
 	"\n" +
-	"\x16gojet/v1/options.proto\x12\bgojet.v1\x1a google/protobuf/descriptor.proto\"\xe0\x02\n" +
+	"\x16gojet/v1/options.proto\x12\bgojet.v1\x1a google/protobuf/descriptor.proto\"V\n" +
+	"\tRpsqlRead\x12\x18\n" +
+	"\acatalog\x18\x01 \x01(\tR\acatalog\x12\x14\n" +
+	"\x05table\x18\x02 \x01(\tR\x05table\x12\x19\n" +
+	"\bcte_name\x18\x03 \x01(\tR\acteName\"\xe0\x02\n" +
 	"\x05Table\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1f\n" +
 	"\vprimary_key\x18\x02 \x03(\tR\n" +
@@ -1278,7 +1372,9 @@ const file_gojet_v1_options_proto_rawDesc = "" +
 	"\rSTORAGE_ARRAY\x10\x02\x12\x15\n" +
 	"\x11STORAGE_TEXT_ENUM\x10\x03\x12\x18\n" +
 	"\x14STORAGE_JSONB_STRMAP\x10\x04:K\n" +
-	"\x05table\x12\x1f.google.protobuf.MessageOptions\x18\xaf\xdb\x04 \x01(\v2\x0f.gojet.v1.TableR\x05table\x88\x01\x01:L\n" +
+	"\x05table\x12\x1f.google.protobuf.MessageOptions\x18\xaf\xdb\x04 \x01(\v2\x0f.gojet.v1.TableR\x05table\x88\x01\x01:X\n" +
+	"\n" +
+	"rpsql_read\x12\x1f.google.protobuf.MessageOptions\x18\xb0\xdb\x04 \x01(\v2\x13.gojet.v1.RpsqlReadR\trpsqlRead\x88\x01\x01:L\n" +
 	"\x06column\x12\x1d.google.protobuf.FieldOptions\x18\xaf\xdb\x04 \x01(\v2\x10.gojet.v1.ColumnR\x06column\x88\x01\x01:\\\n" +
 	"\foneof_column\x12\x1d.google.protobuf.OneofOptions\x18\xaf\xdb\x04 \x01(\v2\x15.gojet.v1.OneofColumnR\voneofColumn\x88\x01\x01BDZBgithub.com/redpanda-data/protoc-gen-go-jet/gen/go/gojet/v1;gojetv1b\x06proto3"
 
@@ -1295,43 +1391,46 @@ func file_gojet_v1_options_proto_rawDescGZIP() []byte {
 }
 
 var file_gojet_v1_options_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_gojet_v1_options_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_gojet_v1_options_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_gojet_v1_options_proto_goTypes = []any{
 	(Action)(0),                         // 0: gojet.v1.Action
 	(PartitionMethod)(0),                // 1: gojet.v1.PartitionMethod
 	(Storage)(0),                        // 2: gojet.v1.Storage
-	(*Table)(nil),                       // 3: gojet.v1.Table
-	(*Tenancy)(nil),                     // 4: gojet.v1.Tenancy
-	(*Index)(nil),                       // 5: gojet.v1.Index
-	(*Column)(nil),                      // 6: gojet.v1.Column
-	(*ForeignKey)(nil),                  // 7: gojet.v1.ForeignKey
-	(*OneofColumn)(nil),                 // 8: gojet.v1.OneofColumn
-	(*Output)(nil),                      // 9: gojet.v1.Output
-	(*Partition)(nil),                   // 10: gojet.v1.Partition
-	(*descriptorpb.MessageOptions)(nil), // 11: google.protobuf.MessageOptions
-	(*descriptorpb.FieldOptions)(nil),   // 12: google.protobuf.FieldOptions
-	(*descriptorpb.OneofOptions)(nil),   // 13: google.protobuf.OneofOptions
+	(*RpsqlRead)(nil),                   // 3: gojet.v1.RpsqlRead
+	(*Table)(nil),                       // 4: gojet.v1.Table
+	(*Tenancy)(nil),                     // 5: gojet.v1.Tenancy
+	(*Index)(nil),                       // 6: gojet.v1.Index
+	(*Column)(nil),                      // 7: gojet.v1.Column
+	(*ForeignKey)(nil),                  // 8: gojet.v1.ForeignKey
+	(*OneofColumn)(nil),                 // 9: gojet.v1.OneofColumn
+	(*Output)(nil),                      // 10: gojet.v1.Output
+	(*Partition)(nil),                   // 11: gojet.v1.Partition
+	(*descriptorpb.MessageOptions)(nil), // 12: google.protobuf.MessageOptions
+	(*descriptorpb.FieldOptions)(nil),   // 13: google.protobuf.FieldOptions
+	(*descriptorpb.OneofOptions)(nil),   // 14: google.protobuf.OneofOptions
 }
 var file_gojet_v1_options_proto_depIdxs = []int32{
-	5,  // 0: gojet.v1.Table.indexes:type_name -> gojet.v1.Index
-	4,  // 1: gojet.v1.Table.tenancy:type_name -> gojet.v1.Tenancy
-	9,  // 2: gojet.v1.Table.output:type_name -> gojet.v1.Output
-	10, // 3: gojet.v1.Table.partition_by:type_name -> gojet.v1.Partition
+	6,  // 0: gojet.v1.Table.indexes:type_name -> gojet.v1.Index
+	5,  // 1: gojet.v1.Table.tenancy:type_name -> gojet.v1.Tenancy
+	10, // 2: gojet.v1.Table.output:type_name -> gojet.v1.Output
+	11, // 3: gojet.v1.Table.partition_by:type_name -> gojet.v1.Partition
 	2,  // 4: gojet.v1.Column.storage:type_name -> gojet.v1.Storage
-	7,  // 5: gojet.v1.Column.foreign_key:type_name -> gojet.v1.ForeignKey
+	8,  // 5: gojet.v1.Column.foreign_key:type_name -> gojet.v1.ForeignKey
 	0,  // 6: gojet.v1.ForeignKey.on_delete:type_name -> gojet.v1.Action
 	0,  // 7: gojet.v1.ForeignKey.on_update:type_name -> gojet.v1.Action
 	1,  // 8: gojet.v1.Partition.method:type_name -> gojet.v1.PartitionMethod
-	11, // 9: gojet.v1.table:extendee -> google.protobuf.MessageOptions
-	12, // 10: gojet.v1.column:extendee -> google.protobuf.FieldOptions
-	13, // 11: gojet.v1.oneof_column:extendee -> google.protobuf.OneofOptions
-	3,  // 12: gojet.v1.table:type_name -> gojet.v1.Table
-	6,  // 13: gojet.v1.column:type_name -> gojet.v1.Column
-	8,  // 14: gojet.v1.oneof_column:type_name -> gojet.v1.OneofColumn
-	15, // [15:15] is the sub-list for method output_type
-	15, // [15:15] is the sub-list for method input_type
-	12, // [12:15] is the sub-list for extension type_name
-	9,  // [9:12] is the sub-list for extension extendee
+	12, // 9: gojet.v1.table:extendee -> google.protobuf.MessageOptions
+	12, // 10: gojet.v1.rpsql_read:extendee -> google.protobuf.MessageOptions
+	13, // 11: gojet.v1.column:extendee -> google.protobuf.FieldOptions
+	14, // 12: gojet.v1.oneof_column:extendee -> google.protobuf.OneofOptions
+	4,  // 13: gojet.v1.table:type_name -> gojet.v1.Table
+	3,  // 14: gojet.v1.rpsql_read:type_name -> gojet.v1.RpsqlRead
+	7,  // 15: gojet.v1.column:type_name -> gojet.v1.Column
+	9,  // 16: gojet.v1.oneof_column:type_name -> gojet.v1.OneofColumn
+	17, // [17:17] is the sub-list for method output_type
+	17, // [17:17] is the sub-list for method input_type
+	13, // [13:17] is the sub-list for extension type_name
+	9,  // [9:13] is the sub-list for extension extendee
 	0,  // [0:9] is the sub-list for field type_name
 }
 
@@ -1340,15 +1439,15 @@ func file_gojet_v1_options_proto_init() {
 	if File_gojet_v1_options_proto != nil {
 		return
 	}
-	file_gojet_v1_options_proto_msgTypes[4].OneofWrappers = []any{}
+	file_gojet_v1_options_proto_msgTypes[5].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_gojet_v1_options_proto_rawDesc), len(file_gojet_v1_options_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   8,
-			NumExtensions: 3,
+			NumMessages:   9,
+			NumExtensions: 4,
 			NumServices:   0,
 		},
 		GoTypes:           file_gojet_v1_options_proto_goTypes,

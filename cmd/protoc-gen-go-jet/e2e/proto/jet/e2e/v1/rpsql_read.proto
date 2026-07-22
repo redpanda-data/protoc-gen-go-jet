@@ -1,0 +1,79 @@
+// rpsql_read exercises the (gojet.v1.rpsql_read) read-model generator: a
+// message projected onto an external Redpanda SQL catalog table. Scalars,
+// enums, Timestamp and single (non-repeated) nested messages become typed
+// accessors; repeated and map fields are skipped (rpsql cannot read array /
+// composite-array columns yet).
+//
+// Field names/types mirror the neutral localdev `orders_seed_test` catalog
+// table so the //go:build integration test can execute the generated model
+// against a live rpsql instance.
+syntax = "proto3";
+
+package jet.e2e.v1;
+
+import "google/protobuf/timestamp.proto";
+import "gojet/v1/options.proto";
+
+// OrderStatus is read as text (enum name column), matching rpsql's enum->text
+// projection. The concrete values need not match the data.
+enum OrderStatus {
+  ORDER_STATUS_UNSPECIFIED = 0;
+  ORDER_STATUS_PAID = 1;
+  ORDER_STATUS_DELIVERED = 2;
+}
+
+// RpsqlOrder is the read model for default_redpanda_catalog => orders_seed_test.
+message RpsqlOrder {
+  option (gojet.v1.rpsql_read) = {
+    catalog: "default_redpanda_catalog"
+    table: "orders_seed_test"
+    cte_name: "o"
+  };
+
+  // Scalars + enum + timestamp -> typed columns.
+  string order_id = 1;
+  google.protobuf.Timestamp created_at = 2;
+  string region = 3;
+  OrderStatus status = 4; // enum -> text column "status"
+  double total = 5;
+
+  // Single nested composite -> (customer).<member>, including a further
+  // nested composite (customer.shipping_address).<member>.
+  Customer customer = 6;
+
+  // Single nested composite -> (payment).<member>.
+  Payment payment = 7;
+
+  // Repeated + map -> skipped (no accessor); assert the generator omits them.
+  repeated LineItem items = 8;
+  repeated string tags = 9;
+  map<string, string> attributes = 10;
+
+  message Address {
+    string street = 1;
+    string city = 2;
+    string country = 3;
+    string postal_code = 4;
+  }
+
+  message Customer {
+    string id = 1;
+    string name = 2;
+    string email = 3;
+    Address shipping_address = 4; // nested composite
+  }
+
+  message Payment {
+    string method = 1;
+    string transaction_id = 2;
+    double amount = 3;
+    string currency = 4;
+  }
+
+  message LineItem {
+    string description = 1;
+    string sku = 2;
+    int32 quantity = 3;
+    double unit_price = 4;
+  }
+}

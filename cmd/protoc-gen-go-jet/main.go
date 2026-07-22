@@ -167,6 +167,7 @@ func main() {
 		// atomic — a bad annotation on message N doesn't leave messages
 		// 1..N-1 half-written to disk.
 		var pending []pendingEmit
+		var pendingRpsql []*rpsqlReadPlan
 		var resolveErrs []error
 
 		for _, f := range gen.Files {
@@ -186,6 +187,15 @@ func main() {
 				}
 			}
 			for _, m := range f.Messages {
+				// Read-model (gojet.v1.rpsql_read) is independent of the
+				// write table; resolve it first so it isn't skipped by the
+				// write path's plan==nil continue below.
+				if rp, err := resolveRpsqlRead(f, m, repoRoot, modulePath); err != nil {
+					resolveErrs = append(resolveErrs, fmt.Errorf("%s: %s: %w", sourceLoc(m.Desc), m.Desc.Name(), err))
+				} else if rp != nil {
+					pendingRpsql = append(pendingRpsql, rp)
+				}
+
 				plan, err := resolveResource(f, m, repoRoot, modulePath)
 				if err != nil {
 					resolveErrs = append(resolveErrs, fmt.Errorf("%s: %s: %w", sourceLoc(m.Desc), m.Desc.Name(), err))
@@ -232,6 +242,13 @@ func main() {
 		for _, pe := range pending {
 			if err := emit(gen, pe.plan); err != nil {
 				emitErrs = append(emitErrs, fmt.Errorf("%s: emit: %w", pe.source, err))
+			}
+		}
+		// Read models emit independently of the write path — no FK
+		// resolution, no DDL/Docker pass (they bind to a runtime CTE).
+		for _, rp := range pendingRpsql {
+			if err := emitRpsqlRead(rp); err != nil {
+				emitErrs = append(emitErrs, fmt.Errorf("%s: %s: rpsql emit: %w", sourceLoc(rp.Message.Desc), rp.Message.Desc.Name(), err))
 			}
 		}
 		if len(emitErrs) > 0 {
