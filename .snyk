@@ -1,0 +1,21 @@
+# Snyk (https://snyk.io) policy file, patches or ignores known vulnerabilities.
+version: v1.25.1
+# ignores vulnerabilities until expiry date; change duration by modifying expiry date
+ignore:
+  SNYK-GOLANG-GOOPENTELEMETRYIOOTELBAGGAGE-17054906:
+    - '*':
+        reason: >-
+          Not reachable: testcontainers uses Moby otelhttp only for outbound
+          Docker requests; this repo never extracts inbound baggage headers and
+          govulncheck finds no vulnerable call.
+        expires: 2026-10-27T09:44:27.000Z
+        created: 2026-07-29T09:44:27.873Z
+  SNYK-GOLANG-GOOPENTELEMETRYIOOTELPROPAGATION-17054905:
+    - '*':
+        reason: >-
+          Not reachable: testcontainers uses Moby otelhttp only for outbound
+          Docker requests; this repo never extracts inbound baggage headers and
+          govulncheck finds no vulnerable call.
+        expires: 2026-10-27T09:44:27.000Z
+        created: 2026-07-29T09:44:29.379Z
+patch: {}
